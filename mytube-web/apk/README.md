@@ -49,7 +49,8 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
-| [v2.04](https://github.com/yeaminuli7/vr/releases/tag/v2.04) | 2.04 (vc 81) | Account buttons respond; WebView identity hardened against Google's sign-in block |
+| [v2.05](https://github.com/yeaminuli7/vr/releases/tag/v2.05) | 2.05 (vc 82) | Sign-in flow hardened: clean injection on YouTube sign-in pages, Chrome brands in JS, intent:// fallback |
+| [v2.04](https://github.com/yeaminuli7/vr/releases/tag/v2.05) | 2.04 (vc 81) | Account buttons respond; WebView identity hardened against Google's sign-in block |
 | [v2.03](https://github.com/yeaminuli7/vr/releases/tag/v2.03) | 2.03 (vc 80) | Sign-in actually responds (adds the missing `WebChromeClient` popup support); ad blocking strengthened |
 | [v2.02](https://github.com/yeaminuli7/vr/releases/tag/v2.02) | 2.02 (vc 79) | Sign in with your Google account |
 | [v2.01](https://github.com/yeaminuli7/vr/releases/tag/v2.01) | 2.01 (vc 78) | Hides YouTube's duplicate top nav bar |
