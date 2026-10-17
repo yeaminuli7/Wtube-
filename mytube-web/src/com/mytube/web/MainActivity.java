@@ -42,6 +42,8 @@ public class MainActivity extends Activity {
     private android.view.View offOverlay;
     private static android.graphics.Bitmap accBmp;
     private static LibIcon accIconRef;
+    /** Settings dialog handle, so sign-in can close it (it is not libDlg). */
+    private android.app.Dialog settingsDlgRef;
     private int hueTab = 357;
     private int hueNav = 220;
     private int huePanel = 357;
@@ -193,6 +195,16 @@ public class MainActivity extends Activity {
             }
         } catch (Throwable t) {
         }
+        /* Google sign-in hops youtube.com -> accounts.google.com -> youtube.com,
+           so third-party cookies must be allowed or the session breaks mid-flow. */
+        try {
+            android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
+            cm.setAcceptCookie(true);
+            if (Build.VERSION.SDK_INT >= 21) {
+                cm.setAcceptThirdPartyCookies(web, true);
+            }
+        } catch (Throwable t) {
+        }
         web.setBackgroundColor(0xFF000000);
         web.setWebViewClient(new WebViewClient() {
 
@@ -316,6 +328,9 @@ public class MainActivity extends Activity {
                     v.evaluateJavascript(coreJs + themeJs() + injectJs, null);
                 } catch (Throwable t) {
                 }
+                /* write cookies through to disk so the signed-in session survives
+                   a process kill - without this the user is logged out on restart */
+                flushCookies();
             }
         });
         web.addJavascriptInterface(new Bridge(), "MTApp");
@@ -698,15 +713,42 @@ public class MainActivity extends Activity {
                             showPlaylists();
                         }
                     }));
-            pbox.addView(libSection("Account (web)"));
-            pbox.addView(libRow("Account", "Open your YouTube account",
-                    new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            dismissLib();
-                            web.loadUrl("https://m.youtube.com/feed/you");
-                        }
-                    }));
+            pbox.addView(libSection("Account"));
+            pbox.addView(accHeaderRow());
+            if (isSignedIn()) {
+                pbox.addView(libRow("Your channel", "Open in web",
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                dismissLib();
+                                web.loadUrl("https://m.youtube.com/feed/you");
+                            }
+                        }));
+                pbox.addView(libRow("Switch account",
+                        "Sign in with a different Google account",
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                startGoogleSignIn();
+                            }
+                        }));
+                pbox.addView(libRow("Sign out", "Clears the saved YouTube session",
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                confirmDo("Sign out?",
+                                        "Clears the saved YouTube session on this device",
+                                        new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                signOut();
+                                            }
+                                        });
+                            }
+                        }));
+            } else {
+                pbox.addView(googleSignInRow());
+            }
             pbox.addView(libRow("Notifications", "Open in web",
                     new View.OnClickListener() {
                         @Override
@@ -1166,6 +1208,36 @@ public class MainActivity extends Activity {
                         }
                     });
             box.addView(swNav);
+            final boolean signedIn = isSignedIn();
+            String accSub = "Use your subscriptions and history";
+            if (signedIn) {
+                try {
+                    String an = prefs.getString("accName", "");
+                    if (an != null && an.length() > 0) {
+                        accSub = "Signed in as " + an;
+                    }
+                } catch (Throwable tAcc) {
+                }
+            }
+            box.addView(libRow(signedIn ? "Google account" : "Sign in with Google",
+                    accSub,
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            if (isSignedIn()) {
+                                confirmDo("Sign out?",
+                                        "Clears the saved YouTube session on this device",
+                                        new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                signOut();
+                                            }
+                                        });
+                            } else {
+                                startGoogleSignIn();
+                            }
+                        }
+                    }));
             android.widget.TextView secD = new android.widget.TextView(this);
             secD.setText("Downloads");
             secD.setTextSize(13);
@@ -1406,7 +1478,8 @@ public class MainActivity extends Activity {
             });
             android.widget.ScrollView sv = new android.widget.ScrollView(this);
             sv.addView(box);
-            final AlertDialog d = new AlertDialog.Builder(this).setView(sv).create();
+             final AlertDialog d = new AlertDialog.Builder(this).setView(sv).create();
+            settingsDlgRef = d;
             ok.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1879,6 +1952,158 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    /* ================================================================
+       Google account sign-in
+       ----------------------------------------------------------------
+       Sign-in has to happen inside this WebView: the YouTube session
+       lives in the WebView cookie jar, and a native Google Sign-In token
+       cannot be turned into those cookies.  Google blocks OAuth inside
+       embedded webviews that advertise "; wv" in the user-agent, which
+       setupWeb() already strips, but it may still refuse - in that case
+       the user sees Google's own "browser not secure" page.
+       ================================================================ */
+
+    /** Google's YouTube sign-in entry point (kept inside the app WebView). */
+    private static final String SIGNIN_URL =
+            "https://m.youtube.com/signin?action_handle_signin=true&app=m";
+
+    private void flushCookies() {
+        try {
+            if (Build.VERSION.SDK_INT >= 21) {
+                android.webkit.CookieManager.getInstance().flush();
+            }
+        } catch (Throwable t) {
+        }
+    }
+
+    /** True when inject.js has reported an account name for the signed-in user. */
+    private boolean isSignedIn() {
+        try {
+            return prefs.getString("accName", "").length() > 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void startGoogleSignIn() {
+        dismissLib();
+        try {
+            if (settingsDlgRef != null) {
+                settingsDlgRef.dismiss();
+                settingsDlgRef = null;
+            }
+        } catch (Throwable t) {
+        }
+        try {
+            web.loadUrl(SIGNIN_URL);
+        } catch (Throwable t) {
+        }
+    }
+
+    private void signOut() {
+        try {
+            android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
+            if (Build.VERSION.SDK_INT >= 21) {
+                cm.removeAllCookies(null);
+            } else {
+                cm.removeAllCookie();
+            }
+            cm.flush();
+        } catch (Throwable t) {
+        }
+        try {
+            prefs.edit().remove("accName").remove("accPic").apply();
+        } catch (Throwable t) {
+        }
+        accBmp = null;
+        try {
+            web.loadUrl("https://m.youtube.com/");
+        } catch (Throwable t) {
+        }
+    }
+
+    /** Avatar + account name header, or a "not signed in" line when signed out. */
+    private android.view.View accHeaderRow() {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(12), 0, dp(12));
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        android.widget.ImageView iv = new android.widget.ImageView(this);
+        int s = dp(40);
+        row.addView(iv, new android.widget.LinearLayout.LayoutParams(s, s));
+        if (accBmp != null) {
+            iv.setImageBitmap(accBmp);
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        } else {
+            iv.setImageDrawable(null);
+            iv.setBackgroundColor(0xFF2A2A2E);
+        }
+
+        android.widget.LinearLayout txt = new android.widget.LinearLayout(this);
+        txt.setOrientation(android.widget.LinearLayout.VERTICAL);
+        txt.setPadding(dp(12), 0, 0, 0);
+        android.widget.TextView t1 = new android.widget.TextView(this);
+        String nm = null;
+        try {
+            nm = prefs.getString("accName", "");
+        } catch (Throwable t) {
+        }
+        if (nm == null || nm.length() == 0) {
+            nm = "Not signed in";
+        }
+        t1.setText(nm);
+        t1.setTextColor(0xFFF2F2F2);
+        t1.setTextSize(15);
+        t1.setMaxLines(1);
+        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        txt.addView(t1);
+
+        android.widget.TextView t2 = new android.widget.TextView(this);
+        t2.setText(isSignedIn() ? "Signed in to YouTube" : "Sign in to use subscriptions and history");
+        t2.setTextColor(0xFF9A9A9A);
+        t2.setTextSize(12);
+        t2.setMaxLines(1);
+        txt.addView(t2);
+
+        row.addView(txt);
+        return row;
+    }
+
+    /** Prominent "Sign in with Google" row, shown when signed out. */
+    private android.view.View googleSignInRow() {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        row.setPadding(dp(12), dp(12), dp(12), dp(12));
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(0xFF1E2228);
+
+        android.widget.LinearLayout txt = new android.widget.LinearLayout(this);
+        txt.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.TextView t1 = new android.widget.TextView(this);
+        t1.setText("Sign in with Google");
+        t1.setTextColor(0xFFF2F2F2);
+        t1.setTextSize(15);
+        t1.setTypeface(null, 1);
+        txt.addView(t1);
+        android.widget.TextView t2 = new android.widget.TextView(this);
+        t2.setText("Watch with your subscriptions");
+        t2.setTextColor(0xFF9A9A9A);
+        t2.setTextSize(12);
+        txt.addView(t2);
+        android.widget.LinearLayout.LayoutParams lp =
+                new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
+        row.addView(txt, lp);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startGoogleSignIn();
+            }
+        });
+        return row;
+    }
+
     private android.view.View libSection(String t) {
         android.widget.TextView v = new android.widget.TextView(this);
         v.setText(t);
@@ -2312,6 +2537,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         sForeground = false;
+        flushCookies();
         try {
             StreamStore.note("pause web=" + webPlaying + " pip=" + inPip
                     + " svc=" + BgService.sRunning + " caps=" + StreamStore.count());
@@ -2471,6 +2697,23 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
+
+        @JavascriptInterface
+        public void toast(final String msg) {
+            if (msg == null || msg.length() == 0) {
+                return;
+            }
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        android.widget.Toast.makeText(MainActivity.this, msg,
+                                android.widget.Toast.LENGTH_LONG).show();
+                    } catch (Throwable t) {
+                    }
+                }
+            });
+        }
 
         @JavascriptInterface
         public void account(final String name, final String pic) {

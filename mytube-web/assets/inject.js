@@ -199,6 +199,38 @@
     } catch (e) { }
   }
 
+  /* সাইন-আউট সনাক্ত: অ্যাভাটার মানে অ্যাকাউন্ট আছে। কোনো গুগল-অ্যাভাটার
+     ইমেজই নেই মানে সাইন-ইন নেই (বা সাইন-আউট হয়ে গেছে) — অ্যাপকে জানাই
+     যাতে Account-সেকশনে "Sign in with Google" আবার দেখায়। */
+  function mtScanSignedOut() {
+    try {
+      var host = (location.hostname || '').toLowerCase();
+      if (host.indexOf('accounts.google.com') >= 0) { return; }
+      if (!/youtube\.com$|youtu\.be$/.test(host)) { return; }
+      var any = document.querySelectorAll(
+          'img[src*="ggpht"], img[src*="yt3.googleusercontent"],'
+        + 'img[src*="googleusercontent"]');
+      if (any.length) { return; }
+      if (__accLast === '') { return; }
+      __accLast = '';
+      if (window.MTApp && MTApp.account) { MTApp.account('', ''); }
+    } catch (e) { }
+  }
+
+  /* গুগল ওয়েবভিউতে OAuth ব্লক করলে এই পেজটা আসে — ব্যবহারকারীকে বোঝাতে হবে
+     অ্যাপের দোষ নয়। */
+  function mtSigninBlocked() {
+    try {
+      if ((location.hostname || '').indexOf('accounts.google.com') < 0
+          && !/\/rejected/.test(location.pathname || '')) {
+        return;
+      }
+      var t = (document.body ? document.body.textContent : '') || '';
+      if (!/may not be secure/i.test(t)) { return; }
+      if (window.MTApp && MTApp.toast) { MTApp.toast('Google blocked sign-in in this app view'); }
+    } catch (e) { }
+  }
+
   /* ---- Play/pause events -> app ---- */
   function bindVideos() {
     try {
@@ -473,7 +505,7 @@
     }
   } catch (e) { }
 
-  setInterval(function () { killAppPromo(); killPlayerCta(); addBell(); rebrand(); addActions(); mtScanAccount(); mtHideYtNav(); }, 600);
+  setInterval(function () { killAppPromo(); killPlayerCta(); addBell(); rebrand(); addActions(); mtScanAccount(); mtScanSignedOut(); mtSigninBlocked(); mtHideYtNav(); }, 600);
 
   /* ================================================================
      ইউটিউবের নিজের নেভিগেশন বার লুকানো — আমাদের ন্যাভ-বারই একমাত্র

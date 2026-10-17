@@ -6,10 +6,14 @@
 build/
 *.idsig
 
-# Signing keys are never committed.
+# Signing keys are never committed - except the shared debug key. That one is
+# committed on purpose (standard Android practice) so successive builds stay
+# installable over each other instead of demanding an uninstall every time.
+# It is NOT the release key: build.sh uses the real keystore on your machine.
 *.p12
 *.jks
 *.keystore
+!debug.keystore
 
 # APK deliverables under apk/ ARE committed and pushed to GitHub.
 # See apk/README.md.
