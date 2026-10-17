@@ -6,7 +6,8 @@ Android with a self-written ExoPlayer/Media3 engine, a self-written parallel dow
 
 | Path | What it is |
 |---|---|
-| [`ANALYSIS.md`](ANALYSIS.md) | **The deliverable.** Complete source analysis: architecture, module-by-module review, 20 prioritised findings with line references, security/privacy review, performance, build engineering, native-layer and licensing assessment, test strategy, 5-phase roadmap. |
+| [`ANALYSIS.md`](ANALYSIS.md) | **The audit.** Complete source analysis: architecture, module-by-module review, 20 prioritised findings with line references, security/privacy review, performance, build engineering, native-layer and licensing assessment, test strategy. |
+| [`ROADMAP-PHASES.md`](ROADMAP-PHASES.md) | **The plan.** 7-phase advanced-feature roadmap — 38 features, each anchored to existing code. Native discovery, Player 2.0, Downloader 2.0, local library, on-device intelligence, privacy tooling, release engineering. Includes a 6-week sequencing plan. |
 | `mytube-web/` | The extracted source of `Wtube_source_2.0.zip.xml` (unmodified). 12,187 lines of Java across 16 classes, 5 asset blobs, the Gradle-free `build.sh`, and the native/C/Python tooling. |
 
 ## Headline findings
@@ -31,7 +32,17 @@ reading source rather than by tests.
 See [`ANALYSIS.md`](ANALYSIS.md) for the full report, the ~10 P1/P2 findings, and the
 phased fix plan.
 
-## Building the app
+## The plan in one line
+
+Wtube has three strong engines (web shell, native player, downloader) and **no middle layer** —
+there's no native search, no native channel/playlist browsing, and nothing that finds what you've
+already saved. Phase 1 closes that gap; Phase 5 exploits the fact that this app owns the *whole*
+pipeline (player + muxer + downloader + history + captions) to ship on-device intelligence no
+competitor can match.
+
+The two features that justify the project: **"find the moment"** (search inside any video's
+transcript and jump to the timestamp) and **storyboard scrub preview** (YouTube-style thumbnails
+that follow the seek bar).
 
 ```bash
 cd mytube-web
