@@ -1,4 +1,15 @@
-# build output
+# Scratch build output - never committed.
+#
+# WARNING: directories named "build/" are ALSO excluded from workspace
+# snapshots, so anything written there is silently discarded and never
+# reaches the user. Deliverables must go in apk/, which is committed.
 build/
-# signing key (generated locally; the real release key lives outside the repo)
+*.idsig
+
+# Signing keys are never committed.
 *.p12
+*.jks
+*.keystore
+
+# APK deliverables under apk/ ARE committed and pushed to GitHub.
+# See apk/README.md.

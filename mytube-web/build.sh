@@ -137,3 +137,11 @@ else
 fi
 rm -f "$T/unsigned.apk.idsig"
 echo "[✓] $OUT"
+
+# Publish: keep a copy in apk/, which is committed and pushed so every build
+# is retrievable from GitHub.  Never use build/ - it is excluded from
+# workspace snapshots and files written there are silently discarded.
+mkdir -p "$P/apk"
+cp -f "$OUT" "$P/apk/$(basename "$OUT")"
+echo "[✓] $P/apk/$(basename "$OUT")"
+echo "[!] Commit + push apk/$(basename "$OUT") so this build is on GitHub."
