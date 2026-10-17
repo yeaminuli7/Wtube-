@@ -13,7 +13,6 @@ accounts.google.com
 accuweather.com
 acorta-enlace.com
 activistpost.com
-ad.doubleclick.net
 adap.tv
 adblockplus.org
 addicted.es
@@ -585,7 +584,6 @@ proton.me
 proxmox.local
 przegladpiaseczynski.pl
 psprices.com
-pubads.g.doubleclick.net
 publicwww.com
 qctimes.com
 qobuz.com

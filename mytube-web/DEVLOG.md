@@ -1299,3 +1299,37 @@ prefs-এ রাখত, কিন্তু UI-তে কেউ দেখাত �
 
 **যাচাই:** javac ক্লিন (২৪৫ ক্লাস), dex ৫,৩৬২,৪৫২ বাইট, apksigner verify ✓,
 zipalign ✓; APK-এর ভেতরের inject.js-এ সেল্টেস্ট ৬৪/৬৪ পাস ✓।
+
+### v2.03 (vc 80) — সাইন-ইন ঠিক + অ্যাড-ব্লকিং আপডেট
+
+**সমস্যা ১: সাইন-ইনে ট্যাপ করলে কিছুই হতো না।**
+কারণ: অ্যাপে **কোনো `WebChromeClient`-ই ছিল না** (`setWebChromeClient`
+কোথাও নেই)। গুগলের সাইন-ইন অ্যাকাউন্ট-চুজার আর কনসেন্ট স্ক্রিন
+`window.open()` পপআপে খোলে — সাপোর্ট না থাকলে সেই কল নীরবে ফেলে দেওয়া
+হয়, তাই "কিছুই হচ্ছে না" মনে হয়।
+- `setSupportMultipleWindows(true)` + `setJavaScriptCanOpenWindowsAutomatically(true)`
+- নতুন `WebChromeClient.onCreateWindow()` → পপআপটা আসলে একটা দ্বিতীয়
+  WebView-এ ফুল-স্ক্রিন ডায়ালগে খোলে (কুকি + `; wv`-মুক্ত UA সহ),
+  বন্ধ হলে কুকি `flush()` করে।
+
+দ্বিতীয় কারণ: আমাদের `core.js` + `inject.js` + থিম-CSS **সব পেজেই**
+ইনজেক্ট হতো — গুগলের সাইন-ইন পেজেও। `core.js` গ্লোবাল `JSON.parse` আর
+`fetch` রিরাইট করে; গুগলের পেজে সেটা বিপদজনক। এখন `injectFor(url)`:
+YouTube-এ পুরো বান্ডেল, `accounts.google.com`-এ শুধু একটা ছোট প্রোব
+(ব্লক-পেজ ধরার জন্য), বাকি সবখানে কিছুই না।
+
+**সমস্যা ২: অ্যাড-ব্লকিং।**
+`AdBlock.block()`-এ হোয়াইটলিস্ট **আগে** চেক হতো, তাই
+`adfilter_white.txt`-এ থাকা `ad.doubleclick.net` আর
+`pubads.g.doubleclick.net` (ইউটিউবের প্রধান অ্যাড-হোস্ট!) কখনোই ব্লক
+হতো না। এখন ক্রম: **HOSTS → core → হোয়াইটলিস্ট → লিস্ট**; আর ঐ দুটো
+এন্ট্রি হোয়াইটলিস্ট থেকে মুছে দেওয়া হয়েছে।
+হার্ডকোডেড অ্যাড-হোস্ট ১৭ → ৪৫ (imasdk, pagead2, tpc.googlesyndication,
+adnxs, pubmatic, rubicon, criteo, taboola, outbrain, moatads,
+scorecardresearch, googletagmanager, doubleverify, openx …) এবং PATHS-এ
+`/gampad/`, `/pagead/interaction/`, `/adframes`, `/viewad/`, `/ad_break` যোগ।
+
+**যাচাই:** javac ক্লিন (২৪৯ ক্লাস), dex ৫,৩৬৫,৯২৮ বাইট, apksigner verify ✓,
+zipalign ✓; APK-এর inject.js-এ সেল্টেস্ট ৬৪/৬৪ পাস ✓; ব্লক-লজিক সিমুলেশনে
+সব কোর-হোস্ট (youtubei.googleapis.com, googlevideo.com, accounts.google.com)
+অক্ষত, সব অ্যাড-হোস্ট ব্লক ✓।

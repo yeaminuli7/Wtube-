@@ -44,6 +44,18 @@ public class MainActivity extends Activity {
     private static LibIcon accIconRef;
     /** Settings dialog handle, so sign-in can close it (it is not libDlg). */
     private android.app.Dialog settingsDlgRef;
+
+    /** Window opened by the page (Google sign-in uses popups for the account
+     *  chooser and consent screens). */
+    private android.app.Dialog popDlg;
+
+    /** Injected on accounts.google.com instead of the YouTube bundle: lets the
+     *  page behave exactly as Google shipped it. */
+    private static final String MT_SIGNIN_PROBE =
+            "(function(){try{"
+            + "var t=(document.body?document.body.textContent:'')||'';"
+            + "if(/may not be secure/i.test(t)&&window.MTApp&&MTApp.toast){"
+            + "MTApp.toast('Google blocked sign-in in this app view');}}catch(e){}})();";
     private int hueTab = 357;
     private int hueNav = 220;
     private int huePanel = 357;
@@ -184,6 +196,11 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
+            /* Google sign-in opens popups (account chooser, consent). Without
+               this the window.open() call is silently dropped and the flow
+               looks frozen, which is why tapping did nothing. */
+            s.setSupportMultipleWindows(true);
+            s.setJavaScriptCanOpenWindowsAutomatically(true);
             try {
                 String ua = s.getUserAgentString();
                 if (ua != null) {
@@ -312,9 +329,14 @@ public class MainActivity extends Activity {
                     }
                     updateNav();
                 }
-                try {
-                    v.evaluateJavascript(coreJs + themeJs() + injectJs, null);
-                } catch (Throwable t) {
+                if (v == web) {
+                    final String inj = injectFor(url);
+                    if (inj.length() > 0) {
+                        try {
+                            v.evaluateJavascript(inj, null);
+                        } catch (Throwable t) {
+                        }
+                    }
                 }
             }
 
@@ -324,13 +346,106 @@ public class MainActivity extends Activity {
                     lastUrl = url;
                 }
                 updateNav();
-                try {
-                    v.evaluateJavascript(coreJs + themeJs() + injectJs, null);
-                } catch (Throwable t) {
+                if (v == web) {
+                    final String inj = injectFor(url);
+                    if (inj.length() > 0) {
+                        try {
+                            v.evaluateJavascript(inj, null);
+                        } catch (Throwable t) {
+                        }
+                    }
                 }
                 /* write cookies through to disk so the signed-in session survives
                    a process kill - without this the user is logged out on restart */
                 flushCookies();
+            }
+        });
+        web.setWebChromeClient(new android.webkit.WebChromeClient() {
+
+            /** window.open() -> a real second WebView in a full-screen dialog. */
+            @Override
+            public boolean onCreateWindow(WebView v, boolean isDialog, boolean userGesture,
+                                          android.os.Message resultMsg) {
+                try {
+                    final WebView pop = new WebView(MainActivity.this);
+                    android.webkit.WebSettings ps = pop.getSettings();
+                    ps.setJavaScriptEnabled(true);
+                    ps.setDomStorageEnabled(true);
+                    ps.setSupportMultipleWindows(true);
+                    ps.setJavaScriptCanOpenWindowsAutomatically(true);
+                    try {
+                        String ua = ps.getUserAgentString();
+                        if (ua != null) {
+                            ps.setUserAgentString(
+                                    ua.replace("; wv", "").replace(" Version/4.0", ""));
+                        }
+                    } catch (Throwable t2) {
+                    }
+                    try {
+                        android.webkit.CookieManager.getInstance()
+                                .setAcceptThirdPartyCookies(pop, true);
+                    } catch (Throwable t2) {
+                    }
+                    pop.setWebViewClient(new WebViewClient() {
+                        @Override
+                        public boolean shouldOverrideUrlLoading(WebView v2,
+                                WebResourceRequest r) {
+                            return false;
+                        }
+                    });
+                    pop.setWebChromeClient(new android.webkit.WebChromeClient() {
+                        @Override
+                        public void onCloseWindow(WebView w) {
+                            try {
+                                if (popDlg != null) {
+                                    popDlg.dismiss();
+                                    popDlg = null;
+                                }
+                            } catch (Throwable t2) {
+                            }
+                        }
+                    });
+                    final android.app.Dialog d = new android.app.Dialog(MainActivity.this,
+                            android.R.style.Theme_Material_NoActionBar);
+                    d.setContentView(pop);
+                    android.view.Window win = d.getWindow();
+                    if (win != null) {
+                        win.setBackgroundDrawable(
+                                new android.graphics.drawable.ColorDrawable(0xFF0F0F0F));
+                        win.setLayout(-1, -1);
+                    }
+                    d.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                        @Override
+                        public void onDismiss(DialogInterface dd) {
+                            try {
+                                pop.destroy();
+                            } catch (Throwable t2) {
+                            }
+                            popDlg = null;
+                            flushCookies();
+                        }
+                    });
+                    d.show();
+                    popDlg = d;
+
+                    WebView.WebViewTransport tr = (WebView.WebViewTransport) resultMsg.obj;
+                    tr.setWebView(pop);
+                    resultMsg.sendToTarget();
+                    return true;
+                } catch (Throwable t) {
+                    return false;
+                }
+            }
+
+            @Override
+            public void onCloseWindow(WebView w) {
+                try {
+                    if (popDlg != null) {
+                        popDlg.dismiss();
+                        popDlg = null;
+                    }
+                } catch (Throwable t) {
+                }
             }
         });
         web.addJavascriptInterface(new Bridge(), "MTApp");
@@ -1973,6 +2088,57 @@ public class MainActivity extends Activity {
                 android.webkit.CookieManager.getInstance().flush();
             }
         } catch (Throwable t) {
+        }
+    }
+
+    /** Host of a URL, lower-cased, or "" when it cannot be parsed. */
+    private static String hostOfUrl(String url) {
+        try {
+            String s = url == null ? "" : url;
+            int i = s.indexOf("://");
+            if (i >= 0) {
+                s = s.substring(i + 3);
+            }
+            int j = s.indexOf('/');
+            if (j >= 0) {
+                s = s.substring(0, j);
+            }
+            int q = s.indexOf('?');
+            if (q >= 0) {
+                s = s.substring(0, q);
+            }
+            int k = s.indexOf(':');
+            if (k >= 0) {
+                s = s.substring(0, k);
+            }
+            return s.toLowerCase();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** What to inject for this page.
+     *
+     *  The YouTube bundle rewrites JSON.parse and fetch and restyles the top
+     *  bar. That is exactly what we want on YouTube and exactly what must not
+     *  happen on Google's sign-in page, where it can deadlock the flow. So the
+     *  sign-in page only gets a tiny probe that reports a Google-side block. */
+    private String injectFor(String url) {
+        try {
+            String h = hostOfUrl(url);
+            if (h.length() == 0) {
+                return "";
+            }
+            if (h.equals("youtube.com") || h.endsWith(".youtube.com")
+                    || h.equals("youtu.be")) {
+                return coreJs + themeJs() + injectJs;
+            }
+            if (h.equals("accounts.google.com") || h.endsWith(".accounts.google.com")) {
+                return MT_SIGNIN_PROBE;
+            }
+            return "";
+        } catch (Throwable t) {
+            return "";
         }
     }
 

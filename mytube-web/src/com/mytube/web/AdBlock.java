@@ -16,11 +16,24 @@ public class AdBlock {
             "fundingchoicesmessages.google.com", "firebaseinstallations.googleapis.com",
             "crashlytics.com", "graph.facebook.com", "connect.facebook.net",
             "app.adjust.com", "video-ad-stats.google.com", "ad.doubleclick.net",
-            "v.doubleclick.net"
+            "v.doubleclick.net",
+            /* --- added: modern ad / measurement / verification hosts --- */
+            "imasdk.googleapis.com", "googleads.g.doubleclick.net",
+            "pagead2.googlesyndication.com", "tpc.googlesyndication.com",
+            "adnxs.com", "adsrvr.org", "amazon-adsystem.com", "pubmatic.com",
+            "rubiconproject.com", "criteo.com", "taboola.com", "outbrain.com",
+            "moatads.com", "scorecardresearch.com", "quantserve.com",
+            "googletagmanager.com", "googletagservices.com",
+            "doubleverify.com", "adsafeprotected.com", "3lift.com",
+            "openx.net", "casalemedia.com", "bidswitch.net", "adform.net",
+            "innovid.com", "sharethrough.com", "spotxchange.com", "tremorhub.com"
     };
 
     private static final String[] PATHS = {
-            "/api/stats/ads", "/pagead/", "/ptracking", "/get_midroll_", "/api/stats/qoe"
+            "/api/stats/ads", "/pagead/", "/ptracking", "/get_midroll_", "/api/stats/qoe",
+            /* --- added --- */
+            "/gampad/", "/pagead/interaction/", "/adframes", "/viewad/",
+            "/ads/measurement", "/log_interaction", "/ad_break"
     };
 
     /** অ্যাপের মূল কাজ যেসব সাইট ছাড়া চলে না — কখনো ব্লক হবে না (সাইট = শেষ দুই লেবেল)। */
@@ -76,9 +89,10 @@ public class AdBlock {
             host = host.toLowerCase();
             load(ctx);
 
-            if (match(sWhite, host)) {
-                return false;
-            }
+            /* Known ad hosts win outright. This check must come BEFORE the
+               whitelist, otherwise an entry in adfilter_white.txt silently
+               disables blocking for a domain that is also an ad host - which
+               is exactly what happened to pubads.g.doubleclick.net. */
             for (int i = 0; i < HOSTS.length; i++) {
                 String h = HOSTS[i];
                 if (host.equals(h) || host.endsWith("." + h)) {
@@ -86,6 +100,9 @@ public class AdBlock {
                 }
             }
             if (isCore(host)) {
+                return false;
+            }
+            if (match(sWhite, host)) {
                 return false;
             }
             if (match(sAlways, host)) {
