@@ -1251,3 +1251,23 @@ JS-নেভিগেশন ব্যবহার করে, লিংক-সি
 **সীমাবদ্ধতা:** এই সেসনে JDK নেই → APK বিল্ড করা যায়নি (javac অনুপস্থিত, build.sh টুল
 dl.google.com থেকে নেয়)। Java-পরিবর্তন শুধু `buildInject()`-এর `__MTFLAGS`-এ navhide যোগ
 এবং Settings-এ একটি Switch — ডেক্লারেশন-ব্যালান্স চেক করা, javac-বিল্ড আপনার যন্ত্রে।
+
+### v2.01 (vc 78, 2026-10-17) — বিল্ড নোট
+
+স্যান্ডবক্সে JDK/Android-SDK না থাকায় (`dl.google.com` বন্ধ) টুলচেইন বিকল্প
+উৎস থেকে এনা হয়েছে: JDK 11 (npm `jdk11`), aapt2 (npm `aaptjs3`), D8 +
+apksigner + android.jar (npm `@drxiaozhi/minapk`), media3 1.11.1 AAR
+(LineageOS ভেন্ডর), guava 31.1-jre + failureaccess (GitHub ভেন্ডর)।
+
+**একটা বড় ঝামেলা:** D8 8.2.2 javac-এর method-level `MethodParameters`
+অ্যাট্রিবিউট পড়তে গিয়ে NullPointerException দেয় (media3-এর ১৯৭টা ক্লাসে)।
+সমাধান: dex-এর আগে ওই অ্যাট্রিবিউটটা সরিয়ে দেওয়া — এটা শুধু রিফ্লেকশন
+মেটাডেটা, রানটাইমে কোনো প্রভাব নেই।
+
+**সতর্কতা:** এই APK-টা নতুন কী (`wtube-build.p12`) দিয়ে সাইন করা — আগের
+Wtube-ইনস্টলের ওপর আপডেট হবে না, আগে আনইনস্টল করতে হবে। নিজের মেশিনে
+`./build.sh Wtube_v2.01.apk 78 2.01` চালালে আসল কী-তেই সাইন হবে।
+
+**যাচাই:** apksigner verify → v2 + v3 ✓; zipalign ✓ (সব এন্ট্রি ৪/৪০৯৬-বাইট
+অ্যালাইন); dex ৫,২৫২ ক্লাস; APK-এর ভেতরের inject.js-এর ওপরেই সেল্টেস্ট
+৬৪/৬৪ পাস ✓।

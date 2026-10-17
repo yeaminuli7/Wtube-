@@ -1,0 +1,4 @@
+# build output
+build/
+# signing key (generated locally; the real release key lives outside the repo)
+*.p12
