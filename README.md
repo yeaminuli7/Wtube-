@@ -52,3 +52,18 @@ cd mytube-web
 Needs Linux + JDK + `curl`/`unzip`/`zip` + `python3`. The script downloads `android.jar`,
 `aapt2`, R8/D8 and the Media3 AARs itself. **The signing keystore is not in this repo**
 (see ANALYSIS.md §8.1) — the keystore path/password are referenced from an absolute local path.
+
+## Download
+
+Prebuilt APKs are on the [Releases page](https://github.com/yeaminuli7/vr/releases) —
+latest is [v2.03](https://github.com/yeaminuli7/vr/releases/tag/v2.03). Each release
+notes page has the direct `.apk` link at the top; open it on your phone and install.
+
+| Release | Version | Highlights |
+| --- | --- | --- |
+| [v2.03](https://github.com/yeaminuli7/vr/releases/tag/v2.03) | 2.03 (vc 80) | Sign-in responds; ad blocking strengthened |
+| [v2.02](https://github.com/yeaminuli7/vr/releases/tag/v2.02) | 2.02 (vc 79) | Google account sign-in |
+| [v2.01](https://github.com/yeaminuli7/vr/releases/tag/v2.01) | 2.01 (vc 78) | Hides YouTube's duplicate top nav |
+
+Requires Android 7.0+ (API 24). Package stays `com.mytube.web` so versions
+install over each other — except v2.01 and older, whose signing keys are gone.
