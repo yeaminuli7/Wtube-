@@ -104,6 +104,67 @@ console.log('\n=== D: live login -> signed-in top strip appears (mutation path) 
     w.close();
   }
 
+  console.log('\n=== G: JS-navigated nav strip (no href at all) ===');
+  {
+    const w = run(`<!DOCTYPE html><html><body><ytm-app>
+      <ytm-mobile-topbar-renderer id="header-bar">
+        <header class="mobile-topbar-header">
+          <ytm-search-box id="search"><input type="search"></ytm-search-box>
+          <div id="__mtbrand">Wtube</div><div id="__mtbell">b</div>
+          <div class="ytm-new-top-tabs" role="tablist">
+            <div class="tab-item">Home</div>
+            <div class="tab-item">Shorts</div>
+            <div class="tab-item">Subscriptions</div>
+          </div>
+        </header>
+      </ytm-mobile-topbar-renderer>
+      </ytm-app></body></html>`);
+    ok(hid(w, '.ytm-new-top-tabs'), 'href-less JS nav strip is hidden by label signature');
+    ok(!hid(w, 'ytm-search-box'), 'search kept in the href-less case');
+    ok(!hid(w, '#__mtbrand'), 'brand kept in the href-less case');
+    w.close();
+  }
+
+  console.log('\n=== H: label-based rules must NOT touch content/real-link bars ===');
+  {
+    const w = run(`<!DOCTYPE html><html><body><ytm-app>
+      <ytm-browse>
+        <div class="ytm-channel-tabs" role="tablist">
+          <a href="/@creator">Home</a><a href="/@creator/videos">Videos</a>
+          <a href="/creator/shorts">Shorts</a><a href="/@creator/live">Live</a>
+        </div>
+      </ytm-browse>
+      <ytm-single-column-browse-results-renderer>
+        <ytm-rich-grid-renderer class="rich-grid-single-column">
+          <ytm-rich-item-renderer><a href="/watch?v=a">Home</a></ytm-rich-item-renderer>
+          <ytm-rich-item-renderer><a href="/watch?v=b">Shorts</a></ytm-rich-item-renderer>
+        </ytm-rich-grid-renderer>
+      </ytm-single-column-browse-results-renderer>
+      </ytm-app></body></html>`);
+    ok(!hid(w, '.ytm-channel-tabs'), 'channel tab bar (real links) is KEPT');
+    ok(!hid(w, 'ytm-rich-grid-renderer'), 'video grid whose titles are Home/Shorts is KEPT');
+    ok(!hid(w, 'ytm-rich-item-renderer'), 'video cards are KEPT');
+    w.close();
+  }
+
+  console.log('\n=== I: item-level nav inside the header row ===');
+  {
+    const w = run(`<!DOCTYPE html><html><body><ytm-app>
+      <ytm-mobile-topbar-renderer id="header-bar">
+        <header class="mobile-topbar-header">
+          <ytm-search-box id="search"><input type="search"></ytm-search-box>
+          <div id="__mtbrand">Wtube</div>
+          <div class="nav-tab-item">Home</div>
+          <div class="nav-tab-item">You</div>
+        </header>
+      </ytm-mobile-topbar-renderer>
+      </ytm-app></body></html>`);
+    ok(hid(w, '.nav-tab-item'), 'item-level nav entries in the header are hidden');
+    ok(!hid(w, 'ytm-search-box'), 'search still kept');
+    ok(!hid(w, '#__mtbrand'), 'brand still kept');
+    w.close();
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();

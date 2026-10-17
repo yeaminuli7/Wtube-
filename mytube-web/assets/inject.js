@@ -636,6 +636,70 @@
     } catch (e) { return false; }
   }
 
+  /* কনটেন্ট-কনটেইনার (ভিডিও-গ্রিড/শেল্ফ) — নেভ-বার হতে পারে না */
+  function mtNavContentish(el) {
+    try {
+      var cls = (' ' + (el.getAttribute('class') || '') + ' ').toLowerCase();
+      var tag = (el.tagName || '').toLowerCase();
+      return /video|lockup|rich|compact|grid|shelf|list|section|metadata|content/
+        .test(cls + ' ' + tag);
+    } catch (e) { return false; }
+  }
+
+  /* লেবেল (টেক্সট/tab-title/title) */
+  function mtNavLabelOf(el) {
+    try {
+      var t = (el.getAttribute('tab-title') || el.getAttribute('title')
+            || el.textContent || '').trim().toLowerCase();
+      return t.replace(/\s+/g, ' ');
+    } catch (e) { return ''; }
+  }
+
+  /* লেবেল কি নেভ-ওয়ার্ড? ("youtube" → মিস না, কারণ \b) */
+  function mtNavLabelIsNav(t) {
+    try {
+      return /^(home|shorts|subscriptions?|library|you|explore|trending|history)\b/
+        .test(t || '');
+    } catch (e) { return false; }
+  }
+
+  /* এলিমেন্ট (নিজে বা নেস্টেড) কি নেভ-ওয়ার্ড-লেবেলযুক্ত? */
+  function mtNavLabelIsNavEl(el) {
+    try {
+      if (mtNavLabelIsNav(mtNavLabelOf(el))) { return true; }
+      var kids = el.querySelectorAll
+          ? el.querySelectorAll('[tab-title],[title]') : [];
+      for (var i = 0; i < kids.length; i++) {
+        if (mtNavLabelIsNav(mtNavLabelOf(kids[i]))) { return true; }
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+
+  /* বাস্ট্রে-লিংক (আসল href) আছে কি না — চ্যানেল-ট্যাব বাদ রাখতে */
+  function mtNavHasRealLink(el) {
+    try {
+      var as = el.querySelectorAll('a[href]');
+      for (var i = 0; i < as.length; i++) {
+        var h = as[i].getAttribute('href') || '';
+        if (h && h.charAt(0) !== '#') { return true; }
+      }
+      return false;
+    } catch (e) { return true; }
+  }
+
+  /* ছোট কনটেইনারে নেভ-ওয়ার্ড-লেবেলযুক্ত আইটেম সংখ্যা */
+  function mtNavLabelHits(el) {
+    try {
+      var n = 0;
+      var kids = el.children || [];
+      for (var i = 0; i < kids.length; i++) {
+        if (mtNavLabelIsNavEl(kids[i])) { n++; }
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
+
   function mtNavHide(el) {
     try {
       if (!el || el.__mtnav) { return; }
@@ -676,7 +740,9 @@
         + 'ytm-topbar-tabs-renderer,ytm-mobile-topbar-tabs,'
         + 'ytm-feed-filter-chip-bar-renderer [role="tablist"],'
         + 'ytm-header-bar [role="tablist"],'
-        + 'ytm-header-bar .mobile-topbar-tabs';
+        + 'ytm-header-bar .mobile-topbar-tabs,'
+          /* অ্যাপ-শেলের সরাসরি-সন্তান ট্যাব-বার (নতুন যেকোনো লেআউট) */
+        + 'ytm-app > [role="tablist"],ytm-app > ytm-top-tabs-renderer';
       var pad =
           /* পিভট-বার লোডা থাকলে বডি/অ্যাপের বাড়তি নিচের প্যাডিং বাদ
              (আমাদের ন্যাভ-বার WebView-এর বাইরে, তাই এই প্যাডিং ফাঁকা জায়গা) */
@@ -757,6 +823,41 @@
         var it = lk.parentElement;
         if (it && mtNavItemLike(it) && !mtNavKeep(it)) { mtNavHide(it); }
         else if (!mtNavKeep(lk)) { mtNavHide(lk); }
+      }
+
+      /* ৪) লেবেল-ভিত্তিক: লিংক না থাকলেও (JS-নেভিগেশন) নেভ-বার শনাক্ত —
+            যেখানে "Home"/"Shorts"/"Subscriptions" লেবেল আছে কিন্তু আসল
+            href নেই (চ্যানেল-ট্যাবের মতো আসল-লিংকযুক্ত বার বাদ থাকে) */
+      var shells = document.querySelectorAll(
+          'ytm-mobile-topbar-renderer,ytm-header-bar,ytm-pivot-bar-renderer,'
+        + 'ytm-browse,ytm-app,header,ytm-single-column-browse-results-renderer');
+      for (var s = 0; s < shells.length; s++) {
+        var kids = shells[s].children || [];
+        for (var j = 0; j < kids.length; j++) {
+          var box = kids[j];
+          if (box.__mtnav) { continue; }
+          if (mtNavKeep(box)) { continue; }
+          if (mtNavContentish(box)) { continue; }
+          if (!mtNavSmall(box)) { continue; }
+          if (mtNavHasRealLink(box)) { continue; }
+          if (mtNavLabelHits(box) >= 2) { mtNavHide(box); }
+        }
+      }
+
+      /* ৫) হেডারের ভেতরের আলাদা আইটেম-লেভেল নেভ (স্ট্রিপ-ছাড়া) */
+      var keeps = document.querySelectorAll(
+          'ytm-mobile-topbar-renderer,ytm-header-bar,header,ytm-app');
+      for (var q = 0; q < keeps.length; q++) {
+        var kk = keeps[q].children || [];
+        for (var m = 0; m < kk.length; m++) {
+          var one = kk[m];
+          if (one.__mtnav) { continue; }
+          if (mtNavHasRealLink(one)) { continue; }
+          if (mtNavContentish(one)) { continue; }
+          if (!mtNavItemLike(one)) { continue; }
+          if (!mtNavLabelIsNavEl(one)) { continue; }
+          mtNavHide(one);
+        }
       }
     } catch (e) { }
   }

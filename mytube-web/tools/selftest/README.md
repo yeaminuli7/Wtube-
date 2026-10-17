@@ -32,3 +32,12 @@ npm test
 - a top strip that appears *after* login is hidden automatically (MutationObserver path)
 - a top strip that appears without a mutation is caught by the 600 ms sweep
 - `accounts.google.com` sign-in page is never touched (host guard)
+
+`test3.js`
+- **the full login journey**: signed-out home -> accounts.google.com sign-in -> back to a
+  signed-in `m.youtube.com` that carries YouTube's 2026 top feed tabs
+- asserts YouTube's top strip and bottom pivot bar are hidden at the signed-in step, that
+  the filter chips (All / Music) survive, and that a Polymer re-render of the strip is
+  re-hidden by the MutationObserver
+- asserts the anti-flicker stylesheet exists immediately at document start and that the
+  pivot-bar bottom padding is cleared
