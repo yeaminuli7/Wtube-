@@ -61,13 +61,86 @@ public class MainActivity extends Activity {
      *  a new tab or popup. */
     private String mtUa;
 
-    /** Injected on accounts.google.com instead of the YouTube bundle: lets the
-     *  page behave exactly as Google shipped it. */
+    /** Injected on sign-in pages instead of the YouTube bundle: lets the page
+     *  behave exactly as Google shipped it. Recognises Google's rejection both
+     *  by its URL and by the wording on the page. */
     private static final String MT_SIGNIN_PROBE =
             "(function(){try{"
             + "var t=(document.body?document.body.textContent:'')||'';"
-            + "if(/may not be secure/i.test(t)&&window.MTApp&&MTApp.toast){"
+            + "var bad=/v3\\/signin\\/rejected/.test(location.href||'')"
+            + "||/may not be secure/i.test(t)||/disallowed_useragent/i.test(t);"
+            + "if(bad&&window.MTApp&&MTApp.toast){"
             + "MTApp.toast('Google blocked sign-in in this app view');}}catch(e){}})();";
+
+    /** Present Chrome's brand list to JavaScript.
+     *
+     *  WebView exposes navigator.userAgentData with an "Android WebView" brand,
+     *  which is a second, JS-readable copy of the Sec-CH-UA leak we cannot fix
+     *  at the HTTP layer. Google's sign-in page is JavaScript-heavy and can read
+     *  it directly, so report the same brands a real Chrome for Android would. */
+    private static String uaFixJs(String chromeMajor) {
+        String v = (chromeMajor == null || chromeMajor.length() == 0) ? "138" : chromeMajor;
+        String b = "[{brand:'Not)A;Brand',version:'99'},"
+                + "{brand:'Chromium',version:'" + v + "'},"
+                + "{brand:'Google Chrome',version:'" + v + "'}]";
+        return "(function(){try{"
+                + "var B=" + b + ";"
+                + "var d={brands:B,mobile:true,platform:'Android',"
+                + "toJSON:function(){return{brands:B,mobile:true,platform:'Android'};},"
+                + "getHighEntropyValues:function(h){return Promise.resolve({"
+                + "architecture:'',bitness:'',model:'',platformVersion:'13.0.0',"
+                + "uaFullVersion:'" + v + ".0.0.0',fullVersionList:B});}};"
+                + "Object.defineProperty(navigator,'userAgentData',"
+                + "{get:function(){return d;},configurable:true});"
+                + "}catch(e){}})();";
+    }
+
+    /** Chrome major version out of our user agent, for the JS brand list. */
+    private static String chromeMajor(String ua) {
+        try {
+            if (ua == null) {
+                return "138";
+            }
+            int i = ua.indexOf("Chrome/");
+            if (i < 0) {
+                return "138";
+            }
+            String rest = ua.substring(i + 7);
+            int sp = rest.indexOf(' ');
+            String v = sp > 0 ? rest.substring(0, sp) : rest;
+            int dot = v.indexOf('.');
+            return dot > 0 ? v.substring(0, dot) : v;
+        } catch (Throwable t) {
+            return "138";
+        }
+    }
+
+    /** True for YouTube's own account/sign-in screens.
+     *
+     *  These live on youtube.com, so the host check alone would hand them the
+     *  full bundle - but core.js rewrites global JSON.parse and fetch, which is
+     *  safe on the watch feed and hazardous on a page whose whole job is to post
+     *  credentials and follow redirects. Keep them clean like Google's pages. */
+    private static boolean isSigninPath(String url) {
+        try {
+            String u = url == null ? "" : url.toLowerCase();
+            int i = u.indexOf("://");
+            if (i >= 0) {
+                u = u.substring(i + 3);
+            }
+            int j = u.indexOf('/');
+            String path = j >= 0 ? u.substring(j) : "/";
+            int q = path.indexOf('?');
+            if (q >= 0) {
+                path = path.substring(0, q);
+            }
+            return path.startsWith("/signin") || path.startsWith("/signup")
+                    || path.startsWith("/login") || path.startsWith("/logout")
+                    || path.startsWith("/account") || path.startsWith("/reauth");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
     private int hueTab = 357;
     private int hueNav = 220;
     private int huePanel = 357;
@@ -281,6 +354,39 @@ public class MainActivity extends Activity {
                     }
                     if (sch.equals("https")) {
                         return false; // সাধারণ https — WebView-এই খোলে
+                    }
+                    // intent:// — the page wants to hand off to another app. We
+                    // still never leave this app, but most intent:// URLs carry
+                    // a browser_fallback_url. Loading that keeps the user inside
+                    // Wtube instead of silently dropping the navigation, which
+                    // is what makes an otherwise working sign-in appear to stall
+                    // on the final redirect.
+                    if (sch.equals("intent")) {
+                        String fb = null;
+                        try {
+                            fb = u.getQueryParameter("browser_fallback_url");
+                        } catch (Throwable t2) {
+                        }
+                        if (fb == null) {
+                            try {
+                                // intent://...#Intent;...;S.browser_fallback_url=<enc>;end
+                                String frag = u.getFragment();
+                                if (frag != null) {
+                                    int k = frag.indexOf("browser_fallback_url=");
+                                    if (k >= 0) {
+                                        String rest = frag.substring(k + 21);
+                                        int e = rest.indexOf(';');
+                                        fb = android.net.Uri.decode(
+                                                e > 0 ? rest.substring(0, e) : rest);
+                                    }
+                                }
+                            } catch (Throwable t2) {
+                            }
+                        }
+                        if (fb != null && fb.startsWith("https://")) {
+                            v.loadUrl(fb);
+                        }
+                        return true;
                     }
                     // intent:/market:/youtube:/tel:/mailto: ... সম্পূর্ণ গ্রাস —
                     // এই অ্যাপ থেকে কখনোই অন্য অ্যাপে যাবে না
@@ -2221,12 +2327,19 @@ public class MainActivity extends Activity {
             if (h.length() == 0) {
                 return "";
             }
+            String fix = uaFixJs(chromeMajor(mtUa));
             if (h.equals("youtube.com") || h.endsWith(".youtube.com")
                     || h.equals("youtu.be")) {
+                /* YouTube's own sign-in screens live on youtube.com, so the host
+                   check alone would give them the full bundle. They get the same
+                   clean treatment as accounts.google.com instead. */
+                if (isSigninPath(url)) {
+                    return MT_SIGNIN_PROBE + fix;
+                }
                 return coreJs + themeJs() + injectJs;
             }
             if (h.equals("accounts.google.com") || h.endsWith(".accounts.google.com")) {
-                return MT_SIGNIN_PROBE;
+                return MT_SIGNIN_PROBE + fix;
             }
             return "";
         } catch (Throwable t) {
