@@ -56,11 +56,12 @@ Needs Linux + JDK + `curl`/`unzip`/`zip` + `python3`. The script downloads `andr
 ## Download
 
 Prebuilt APKs are on the [Releases page](https://github.com/yeaminuli7/vr/releases) —
-latest is [v2.03](https://github.com/yeaminuli7/vr/releases/tag/v2.03). Each release
+latest is [v2.04](https://github.com/yeaminuli7/vr/releases/tag/v2.04). Each release
 notes page has the direct `.apk` link at the top; open it on your phone and install.
 
 | Release | Version | Highlights |
 | --- | --- | --- |
+| [v2.04](https://github.com/yeaminuli7/vr/releases/tag/v2.04) | 2.04 (vc 81) | Account buttons respond; WebView identity hardened against Google's sign-in block |
 | [v2.03](https://github.com/yeaminuli7/vr/releases/tag/v2.03) | 2.03 (vc 80) | Sign-in responds; ad blocking strengthened |
 | [v2.02](https://github.com/yeaminuli7/vr/releases/tag/v2.02) | 2.02 (vc 79) | Google account sign-in |
 | [v2.01](https://github.com/yeaminuli7/vr/releases/tag/v2.01) | 2.01 (vc 78) | Hides YouTube's duplicate top nav |
