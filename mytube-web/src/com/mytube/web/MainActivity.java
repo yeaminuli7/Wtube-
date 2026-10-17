@@ -45,9 +45,21 @@ public class MainActivity extends Activity {
     /** Settings dialog handle, so sign-in can close it (it is not libDlg). */
     private android.app.Dialog settingsDlgRef;
 
+    /** The Profile sheet opened from the Library screen. Previously this dialog
+     *  was only ever held in a local variable, so nothing could dismiss it -
+     *  tapping "Sign in with Google" loaded the sign-in page *behind* this
+     *  still-open sheet, which is why the button looked dead. */
+    private android.app.Dialog profDlg;
+
     /** Window opened by the page (Google sign-in uses popups for the account
      *  chooser and consent screens). */
     private android.app.Dialog popDlg;
+
+    /** The Chrome-for-Android user agent we install on every WebView. Kept as a
+     *  field so it can be re-asserted: WebView is known to reset a custom UA
+     *  back to the default (which re-adds the "; wv" marker) when a page opens
+     *  a new tab or popup. */
+    private String mtUa;
 
     /** Injected on accounts.google.com instead of the YouTube bundle: lets the
      *  page behave exactly as Google shipped it. */
@@ -202,12 +214,9 @@ public class MainActivity extends Activity {
             s.setSupportMultipleWindows(true);
             s.setJavaScriptCanOpenWindowsAutomatically(true);
             try {
-                String ua = s.getUserAgentString();
-                if (ua != null) {
-                    ua = ua.replace("; wv", "").replace(" Version/4.0", "");
-                    s.setUserAgentString(ua);
-                }
-                StreamStore.sUA = s.getUserAgentString();
+                mtUa = chromeUa(s.getUserAgentString());
+                s.setUserAgentString(mtUa);
+                StreamStore.sUA = mtUa;
             } catch (Throwable t2) {
             }
         } catch (Throwable t) {
@@ -329,6 +338,19 @@ public class MainActivity extends Activity {
                     }
                     updateNav();
                 }
+                /* WebView resets a custom user agent back to the default - which
+                   re-adds the "; wv" marker - when a page opens a new tab or
+                   popup. Re-assert ours on every navigation so the sign-in flow
+                   can never revert to a WebView-identifying UA mid-flow. */
+                try {
+                    if (mtUa != null) {
+                        WebSettings vs = v.getSettings();
+                        if (!mtUa.equals(vs.getUserAgentString())) {
+                            vs.setUserAgentString(mtUa);
+                        }
+                    }
+                } catch (Throwable t) {
+                }
                 if (v == web) {
                     final String inj = injectFor(url);
                     if (inj.length() > 0) {
@@ -342,7 +364,10 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView v, String url) {
-                if (url != null) {
+                /* Only the main frame owns lastUrl - a popup must not overwrite
+                   it, or the ad blocker judges third-party requests against the
+                   wrong page for the rest of the session. */
+                if (v == web && url != null) {
                     lastUrl = url;
                 }
                 updateNav();
@@ -374,11 +399,10 @@ public class MainActivity extends Activity {
                     ps.setSupportMultipleWindows(true);
                     ps.setJavaScriptCanOpenWindowsAutomatically(true);
                     try {
-                        String ua = ps.getUserAgentString();
-                        if (ua != null) {
-                            ps.setUserAgentString(
-                                    ua.replace("; wv", "").replace(" Version/4.0", ""));
+                        if (mtUa == null) {
+                            mtUa = chromeUa(ps.getUserAgentString());
                         }
+                        ps.setUserAgentString(mtUa);
                     } catch (Throwable t2) {
                     }
                     try {
@@ -950,6 +974,15 @@ public class MainActivity extends Activity {
                         new android.graphics.drawable.ColorDrawable(0xFF0F0F0F));
                 pw.setLayout(-1, -2);
             }
+            profDlg = pdg;
+            pdg.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                @Override
+                public void onDismiss(DialogInterface d4) {
+                    if (profDlg == pdg) {
+                        profDlg = null;
+                    }
+                }
+            });
             pdg.show();
         } catch (Throwable t) {
         }
@@ -2021,6 +2054,17 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
         }
         libDlg = null;
+        /* The Profile sheet is opened from the Library sheet, so closing one has
+           to close the other. Otherwise the Profile sheet stays over the
+           WebView and the page we just navigated to loads out of sight, making
+           the button the user pressed look dead. */
+        try {
+            if (profDlg != null) {
+                profDlg.dismiss();
+            }
+        } catch (Throwable t) {
+        }
+        profDlg = null;
     }
 
     /** অ্যাভাটার-URL থেকে ছবি নামিয়ে ক্যাশে রাখা (Bridge.account + লেজি-লোড) */
@@ -2091,6 +2135,54 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** A Chrome-for-Android user agent, built from scratch rather than by
+     *  editing the WebView default.
+     *
+     *  Why this matters: WebView only populates the Sec-CH-UA client hints when
+     *  the overridden UA still contains the default UA. Just deleting "; wv"
+     *  from the default string leaves it close enough that WebView keeps
+     *  advertising itself, and every request then carries
+     *      Sec-CH-UA: "Chromium";v="138", "Android WebView";v="138"
+     *  which is exactly what makes Google reject the sign-in with "This browser
+     *  or app may not be secure". Those hints cannot be removed through any
+     *  public WebView API, so the only lever is to stop WebView from deriving
+     *  them: give it a UA that does not contain the default one, and it sends
+     *  no WebView-branded hints at all.
+     *
+     *  The Chrome major version is still taken from the real WebView so the
+     *  string matches the engine actually rendering the page. */
+    private static String chromeUa(String def) {
+        try {
+            String chrome = "120.0.0.0";
+            if (def != null) {
+                int i = def.indexOf("Chrome/");
+                if (i >= 0) {
+                    String rest = def.substring(i + 7);
+                    int sp = rest.indexOf(' ');
+                    String ver = sp > 0 ? rest.substring(0, sp) : rest;
+                    int dot = ver.indexOf('.');
+                    if (dot > 0) {
+                        chrome = ver.substring(0, dot) + ".0.0.0";
+                    }
+                }
+            }
+            String model = Build.MODEL;
+            if (model == null || model.length() == 0) {
+                model = "Pixel";
+            }
+            String rel = Build.VERSION.RELEASE;
+            if (rel == null || rel.length() == 0) {
+                rel = "13";
+            }
+            return "Mozilla/5.0 (Linux; Android " + rel + "; " + model
+                    + ") AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + chrome
+                    + " Mobile Safari/537.36";
+        } catch (Throwable t) {
+            return "Mozilla/5.0 (Linux; Android 13; Pixel) AppleWebKit/537.36"
+                    + " (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+        }
+    }
+
     /** Host of a URL, lower-cased, or "" when it cannot be parsed. */
     private static String hostOfUrl(String url) {
         try {
@@ -2152,6 +2244,13 @@ public class MainActivity extends Activity {
     }
 
     private void startGoogleSignIn() {
+        /* Visible acknowledgement. Without it a tap that works but is then
+           rejected by Google is indistinguishable from a dead button. */
+        try {
+            android.widget.Toast.makeText(this, "Opening Google sign-in",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+        }
         dismissLib();
         try {
             if (settingsDlgRef != null) {
@@ -2182,6 +2281,7 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
         }
         accBmp = null;
+        dismissLib();
         try {
             web.loadUrl("https://m.youtube.com/");
         } catch (Throwable t) {
