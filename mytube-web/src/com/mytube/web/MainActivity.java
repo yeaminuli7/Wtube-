@@ -130,6 +130,8 @@ public class MainActivity extends Activity {
                     : "")
                 + "try{window.__MTFLAGS={skick:"
                 + (prefs.getBoolean("skick", true) ? "true" : "false")
+                + ",navhide:"
+                + (prefs.getBoolean("navhide", true) ? "true" : "false")
                 + "};}catch(e){};"
                 + readAsset("inject.js");
     }
@@ -1151,6 +1153,19 @@ public class MainActivity extends Activity {
                         }
                     });
             box.addView(swSk);
+            final android.widget.Switch swNav = new android.widget.Switch(this);
+            swNav.setText("Hide YouTube navigation");
+            swNav.setTextSize(16);
+            swNav.setTextColor(0xFFFFFFFF);
+            swNav.setChecked(prefs.getBoolean("navhide", true));
+            swNav.setOnCheckedChangeListener(
+                    new android.widget.CompoundButton.OnCheckedChangeListener() {
+                        @Override
+                        public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
+                            prefs.edit().putBoolean("navhide", on).apply();
+                        }
+                    });
+            box.addView(swNav);
             android.widget.TextView secD = new android.widget.TextView(this);
             secD.setText("Downloads");
             secD.setTextSize(13);

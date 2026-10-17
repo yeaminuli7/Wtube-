@@ -16,6 +16,11 @@
   }
   ensureHideCss();
 
+  /* ---- ইউটিউবের নিজের নেভ-বার লুকানোর CSS (ডকুমেন্ট-স্টার্টেই → ঝলক নেই) ----
+     একই ফাইলের নিচে mtNavOn()/ensureNavCss()/mtHideYtNav() আছে — ফাংশন
+     ডিক্লারেশন হোইস্ট হয়, তাই এখানে কল করা যায়। */
+  ensureNavCss();
+
   /* ---- Trusted Types মোকাবিলা (ইউটিউবে innerHTML/DOMParser-ই নিষিদ্ধ) ---- */
   var __ttp = null;
   function ttHtml(el, html) {
@@ -457,7 +462,7 @@
     __mtFlush = true;
     setTimeout(function () {
       __mtFlush = false;
-      try { killAppPromo(); killPlayerCta(); rebrand(); } catch (e) { }
+      try { killAppPromo(); killPlayerCta(); rebrand(); mtHideYtNav(); } catch (e) { }
     }, 30);
   }
   try {
@@ -468,14 +473,294 @@
     }
   } catch (e) { }
 
-  setInterval(function () { killAppPromo(); killPlayerCta(); addBell(); rebrand(); addActions(); mtScanAccount(); }, 600);
+  setInterval(function () { killAppPromo(); killPlayerCta(); addBell(); rebrand(); addActions(); mtScanAccount(); mtHideYtNav(); }, 600);
+
+  /* ================================================================
+     ইউটিউবের নিজের নেভিগেশন বার লুকানো — আমাদের ন্যাভ-বারই একমাত্র
+     ----------------------------------------------------------------
+     সমস্যা: সাইন-ইন করলে ইউটিউব ফিড-ট্যাবগুলো (Home / Shorts /
+     Subscriptions / Library) উপরে সরিয়ে দেয় — ২০২৬-এর নতুন "swipeable
+     top tabs" লেআউট (টিম ইউটিউব ৭ মে ২০২৬ অ্যানাউন্স)। ফলে আমাদের
+     নিচের ন্যাভ-বারের সাথে উপরে ডুপ্লিকেট Home/Shorts/… বার দেখা যায়।
+
+     সমাধান — দুই স্তর:
+       ১) CSS: জানা কনটেইনার (ytm-pivot-bar-renderer, টপ-ট্যাব-স্ট্রিপ …)
+          ডকুমেন্ট-স্টার্টেই লুকানো → কোনো ঝলক নেই।
+       ২) রানটাইম শনাক্তকরণ: লিংক-সিগনেচার (href = /, /shorts, /feed/…)
+          দিয়ে যেকোনো "নেভ-স্ট্রিপ" খুঁজে বের করে লুকানো। ইউটিউব ক্লাস-নাম
+          বদলালেও কাজ করে — এটাই আসল সমাধান।
+     ================================================================ */
+  function mtNavOn() {
+    try {
+      return !(window.__MTFLAGS && window.__MTFLAGS.navhide === false);
+    } catch (e) { return true; }
+  }
+
+  /* শুধু ইউটিউবের পেজে কাজ করবে (Google-লগইন-পেজে ঢুকবে না) */
+  function mtNavHostOk() {
+    try {
+      var h = (location.hostname || '').toLowerCase();
+      if (!h) { return true; }
+      return h.indexOf('youtube.com') >= 0 || h.indexOf('youtu.be') >= 0
+          || h.indexOf('youtube-nocookie.com') >= 0;
+    } catch (e) { return true; }
+  }
+
+  /* ইউটিউবের ট্যাব-ডেস্টিনেশন (হোম / শর্টস / সাবস্ক্রাইব / ইউ-লাইব্রেরি) */
+  var NAV_PATHS = {
+    '/': 1, '/shorts': 1, '/feed/subscriptions': 1, '/feed/you': 1,
+    '/feed/trending': 1, '/feed/history': 1, '/feed/explore': 1,
+    '/feed/library': 1, '/feed/storefront': 1
+  };
+
+  /* শুধু নেভ-ওয়ার্ড লেবেল (ফিল্টার-চিপে "Shorts" বৈধ ফিল্টার, তাই বাদ) */
+  var NAV_WORDS = /^(home|subscriptions?|library|you|explore|trending|history)$/;
+
+  /* এলিমেন্টের href (নিজের, না পারলে ভেতরের a) */
+  function mtNavHref(el) {
+    try {
+      if (!el) { return ''; }
+      var a = ((el.tagName || '').toLowerCase() === 'a') ? el
+            : (el.querySelector ? el.querySelector('a[href]') : null);
+      if (!a) { return ''; }
+      return a.getAttribute('href') || '';
+    } catch (e) { return ''; }
+  }
+
+  /* নেভ-পাথ (কোয়েরি-সহ, যেমন "/?itct=0") — সিগনেচারে ব্যবহার */
+  function mtNavPath(el) {
+    try {
+      var h = mtNavHref(el);
+      if (!h || h.charAt(0) !== '/') { return null; }
+      var p = h.split('?')[0].split('#')[0];
+      if (p.length > 1 && p.charAt(p.length - 1) === '/') {
+        p = p.slice(0, p.length - 1);
+      }
+      return NAV_PATHS[p] ? p : null;
+    } catch (e) { return null; }
+  }
+
+  /* ঠিক নেভ-পাথ (কোয়েরি/হ্যাশ ছাড়া) — চিপ শনাক্তে ব্যবহার */
+  function mtNavExact(el) {
+    try {
+      var h = mtNavHref(el);
+      if (!h || h.charAt(0) !== '/' || h.indexOf('?') >= 0 || h.indexOf('#') >= 0) {
+        return null;
+      }
+      var p = h;
+      if (p.length > 1 && p.charAt(p.length - 1) === '/') {
+        p = p.slice(0, p.length - 1);
+      }
+      return NAV_PATHS[p] ? p : null;
+    } catch (e) { return null; }
+  }
+
+  /* এই লিংকটা কখনো নেভ-বারের অংশ নয় (লোগো / অ্যাকাউন্ট / সার্চ) */
+  function mtNavLinkSafe(el) {
+    try {
+      if (el.closest && el.closest(
+          'ytm-account-avatar,ytm-home-logo,ytm-search-box,#search,'
+        + '#__mtbrand,#__mtbell,.mobile-topbar-header-endpoint')) { return true; }
+      return false;
+    } catch (e) { return false; }
+  }
+
+  /* যে কনটেইনারটি কখনো লুকানো হবে না (আমাদের হেডার/সার্চ থাকে) */
+  function mtNavKeep(el) {
+    try {
+      var t = (el.tagName || '').toLowerCase();
+      if (t === 'ytm-mobile-topbar-renderer' || t === 'ytm-header-bar'
+          || t === 'ytm-app' || t === 'ytm-watch' || t === 'ytm-browse'
+          || t === 'ytm-single-column-browse-results-renderer'
+          || t === 'ytm-account-avatar' || t === 'ytm-home-logo'
+          || t === 'body' || t === 'html') { return true; }
+      var c2 = (' ' + (el.getAttribute('class') || '') + ' ').toLowerCase();
+      if (c2.indexOf(' mobile-topbar-header ') >= 0) { return true; }
+      /* সার্চ-বক্স / আমাদের ব্র্যান্ড / বেল থাকলে লুকাবো না */
+      if (el.querySelector('input,ytm-search-box,#search,#__mtbrand,#__mtbell')) {
+        return true;
+      }
+      /* ফিড-চিপ-বার আলাদাভাবে (গ্রানুলার) সামলানো হয় */
+      if (el.closest && el.closest(
+          'ytm-feed-filter-chip-bar-renderer,#filter-chip-bar')) { return true; }
+      return false;
+    } catch (e) { return true; }
+  }
+
+  /* সরাসরি-সন্তান হিসেবে নেভ-লিংক ধরে এমন বারের সংখ্যা (ক্লাস-নাম ছাড়াই
+     শনাক্ত করার জন্য: যেমন <div><a href="/">…</a><a href="/shorts">…</a></div>) */
+  function mtNavDirectNavCount(el) {
+    try {
+      var n = 0;
+      var kids = el.children || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (mtNavPath(k)) { n++; continue; }
+        /* অনেক সন্তান থাকলে (কার্ড-গ্রিড) ধরা পড়ে না — খরচও কম */
+        if (k.children && k.children.length <= 2) {
+          var a = k.querySelector ? k.querySelector('a[href]') : null;
+          if (a && mtNavPath(a)) { n++; }
+        }
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
+
+  /* ছোট বার (পুরো পেজ-কনটেইনার হলে লুকাবো না) */
+  function mtNavSmall(el) {
+    try {
+      var r = el.getBoundingClientRect();
+      return !(r.height > 280);
+    } catch (e) { return true; }
+  }
+
+  /* স্ট্রিপ-মন্দি: ট্যাব/চিপ/পিভট/নেভ-মতো দেখতে এবং ছোট */
+  function mtNavStrip(el) {
+    try {
+      var cls = (' ' + (el.getAttribute('class') || '') + ' ').toLowerCase();
+      var tag = (el.tagName || '').toLowerCase();
+      var role = el.getAttribute('role') || '';
+      var looks = /tab|chip|pivot|nav|menu|guide|bar/.test(cls + ' ' + tag)
+            || role === 'tablist' || role === 'tab' || role === 'navigation';
+      if (!looks) { return false; }
+      return mtNavSmall(el);
+    } catch (e) { return false; }
+  }
+
+  /* নেভ-আইটেম-মতো (একটা ট্যাব/চিপ/আইকন) */
+  function mtNavItemLike(el) {
+    try {
+      var cls = (' ' + (el.getAttribute('class') || '') + ' ').toLowerCase();
+      var tag = (el.tagName || '').toLowerCase();
+      return /item|tab|chip|pivot|option|entry/.test(cls + ' ' + tag);
+    } catch (e) { return false; }
+  }
+
+  function mtNavHide(el) {
+    try {
+      if (!el || el.__mtnav) { return; }
+      el.__mtnav = 1;
+      el.style.setProperty('display', 'none', 'important');
+      el.setAttribute('hidden', '');
+    } catch (e) { }
+  }
+
+  function mtNavShow(el) {
+    try {
+      if (!el || !el.__mtnav) { return; }
+      el.__mtnav = 0;
+      el.style.removeProperty('display');
+      el.removeAttribute('hidden');
+    } catch (e) { }
+  }
+
+  /* ---- CSS স্তর: জানা কনটেইনার (অ্যান্টি-ফ্লিকার) ---- */
+  function ensureNavCss() {
+    if (!mtNavOn()) { return; }
+    if (!mtNavHostOk()) { return; }
+    if (document.getElementById('__mtnavcss')) { return; }
+    try {
+      var st = document.createElement('style');
+      st.id = '__mtnavcss';
+      var hide =
+          /* নিচের ট্যাব-বার (Home/Shorts/Subs/You) — আমাদের ডুপ্লিকেট */
+          'ytm-pivot-bar-renderer,'
+        + 'ytd-mini-guide-renderer,ytd-guide-renderer,'
+        + '#appbar-guide-menu,'
+          /* উপরের ট্যাব-স্ট্রিপ (২০২৬-এর নতুন লেআউট + যেকোনো নতুন নাম) */
+        + 'ytm-mobile-topbar-renderer [role="tablist"],'
+        + 'ytm-mobile-topbar-renderer .mobile-topbar-tabs,'
+        + 'ytm-mobile-topbar-renderer .topbar-tabs,'
+        + 'ytm-mobile-topbar-renderer ytm-topbar-tabs-renderer,'
+        + 'ytm-mobile-topbar-renderer ytm-mobile-topbar-tabs,'
+        + 'ytm-topbar-tabs-renderer,ytm-mobile-topbar-tabs,'
+        + 'ytm-feed-filter-chip-bar-renderer [role="tablist"],'
+        + 'ytm-header-bar [role="tablist"],'
+        + 'ytm-header-bar .mobile-topbar-tabs';
+      var pad =
+          /* পিভট-বার লোডা থাকলে বডি/অ্যাপের বাড়তি নিচের প্যাডিং বাদ
+             (আমাদের ন্যাভ-বার WebView-এর বাইরে, তাই এই প্যাডিং ফাঁকা জায়গা) */
+          'body[has-pivot-bar="true"],body[has-pivot-bar],ytm-app';
+      st.textContent = hide + '{display:none!important}' + pad
+        + '{padding-bottom:0!important}';
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) { }
+  }
+
+  function mtNavCssOff() {
+    try {
+      var el = document.getElementById('__mtnavcss');
+      if (el && el.parentNode) { el.parentNode.removeChild(el); }
+    } catch (e) { }
+  }
+
+  /* ---- রানটাইম স্তর: লিংক-সিগনেচার দিয়ে শনাক্ত করে লুকানো ---- */
+  function mtHideYtNav() {
+    try {
+      if (!mtNavOn()) {
+        mtNavCssOff();
+        var all = document.querySelectorAll('[__mtnav]');
+        for (var z = 0; z < all.length; z++) { mtNavShow(all[z]); }
+        return;
+      }
+      if (!mtNavHostOk()) { return; }
+      ensureNavCss();
+
+      /* ১) পুরো নেভ-বার (নিচের পিভট-বার, গাইড) */
+      var known = document.querySelectorAll(
+          'ytm-pivot-bar-renderer,ytd-mini-guide-renderer,'
+        + 'ytd-guide-renderer,#appbar-guide-menu');
+      for (var i = 0; i < known.length; i++) { mtNavHide(known[i]); }
+
+      /* ২) ফিড-চিপ-বারের ভেতরের নেভ-চিপ (Home / Subscriptions …) লুকাও —
+            বাকি ফিল্টার-চিপ (All / Music / Gaming) থাকে */
+      var bars = document.querySelectorAll(
+          'ytm-feed-filter-chip-bar-renderer,#filter-chip-bar');
+      for (var b = 0; b < bars.length; b++) {
+        var chips = bars[b].querySelectorAll(
+            'ytm-chip-cloud-chip-renderer,[role="tab"]');
+        for (var c = 0; c < chips.length; c++) {
+          var ch = chips[c];
+          if (ch.__mtnav) { continue; }
+          /* চিপের ভেতরের লিংকটা আলাদা করে ধরবো না (ডুপ্লিকেট) */
+          var inner = ch.querySelector('a[href]');
+          if (inner && inner.__mtnav) { continue; }
+          var lbl = (ch.getAttribute('tab-title')
+                  || (ch.textContent || '')).trim().toLowerCase();
+          var navish = !!mtNavExact(ch) || NAV_WORDS.test(lbl);
+          if (navish) {
+            if (inner) { mtNavHide(inner); }
+            mtNavHide(ch);
+          }
+        }
+      }
+
+      /* ৩) সিগনেচার-স্ক্যান: প্রতিটি নেভ-লিংক থেকে উপরে উঠে তার "স্ট্রিপ" খুঁজে
+            লুকানো (ক্লাস-নাম বদলালেও চলে) */
+      var links = document.querySelectorAll('a[href]');
+      for (var k = 0; k < links.length; k++) {
+        var lk = links[k];
+        if (!mtNavPath(lk)) { continue; }
+        if (mtNavLinkSafe(lk)) { continue; }
+        var cur = lk.parentElement;
+        var cand = null;
+        var guard = 0;
+        while (cur && guard++ < 12) {
+          if (mtNavKeep(cur)) { break; }
+          /* স্ট্রিপ-চিহ্ন (ক্লাস/role) অথবা সরাসরি-নেভ-লিংক-বার */
+          if (mtNavStrip(cur)
+              || (mtNavDirectNavCount(cur) >= 2 && mtNavSmall(cur))) { cand = cur; }
+          cur = cur.parentElement;
+        }
+        if (cand) { mtNavHide(cand); continue; }
+        /* স্ট্রিপ পাওয়া গেল না → নিজে আইটেমটাই লুকাও */
+        var it = lk.parentElement;
+        if (it && mtNavItemLike(it) && !mtNavKeep(it)) { mtNavHide(it); }
+        else if (!mtNavKeep(lk)) { mtNavHide(lk); }
+      }
+    } catch (e) { }
+  }
 
   /* ---- ইউটিউবের নিজের ট্যাব-বার লুকানো (আমাদের ন্যাভ-বার ব্যবহৃত) ---- */
-  try {
-    var st2 = document.createElement('style');
-    st2.textContent = 'ytm-pivot-bar-renderer,ytd-mini-guide-renderer,'
-      + '#appbar-guide-menu{display:none!important}'
-      + 'body{padding-bottom:58px!important}';
-    document.documentElement.appendChild(st2);
-  } catch (e) { }
+  mtHideYtNav();
 })();
