@@ -1403,3 +1403,39 @@ APK-এর inject.js-এ সেল্টেস্ট ৬৪/৬৪ ✓, dex-এ 
 **যাচাই:** javac ক্লিন (২৫০ ক্লাস), dex ৫,৩৬৮,৯৪৮ বাইট, apksigner verify ✓,
 zipalign ✓, সার্টিফিকেট v2.04-এর সাথে মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓,
 dex-এ `; wv` = ০ ✓; jsdom-এ `uaFixJs()` টেস্ট → ব্র্যান্ডে "Android WebView" নেই ✓।
+
+### v2.06 (vc 83) — ইন-অ্যাপ ব্রাউজার (Chrome Custom Tabs)
+
+**পটভূমি:** গুগল এমবেডেড WebView-এ OAuth সার্ভ করে না — এটা নীতি, সার্ভার-সাইড
+প্রয়োগকৃত। UA, `Sec-CH-UA`, `navigator.userAgentData` — যতটুকু অ্যাপের নিয়ন্ত্রণে,
+সব ঠিক করার পরেও গুগল ফেল করে দেয়। তাই v2.05-এর পর ইউজার-চয়েস: **হাইব্রিড**।
+
+**কেন WebView-এ কখনোই হবে না:** Custom Tabs-এর কুকি **Chrome-এর** জারে থাকে,
+অ্যাপের নয় — Chromium-এর নিজস্ব CCT নিরাপত্তা নথিতে স্পষ্ট: "Embedders cannot
+access ... cookies"। তাই ব্রাউজার লগ-ইন থাকলেও WebView থাকে বাইরে — দুটো কখনো
+মেলানো যায় না।
+
+**যা করা হলো:**
+- `openInAppBrowser(url)` — **কোনো লাইব্রেরি ছাড়াই** Custom Tabs: Intent +
+  `android.support.customtabs.extra.*` এক্সট্রা (androidx.browser ঠিক এগুলোই
+  পাঠায়; null SESSION বৈধ)। `cctPackage()` Chrome-কে প্রাধান্য দেয়, না থাকলে
+  ডিফল্ট ব্রাউজার।
+- `isAccountPage()` + `openUrl()` — `/feed/subscriptions`, `/feed/you`,
+  `/feed/history`, `/feed/notifications` → ব্রাউজারে; বাকি সব WebView-এ
+  (অ্যাড-ব্লকিং, থিম, নেটিভ প্লেয়ার অক্ষত)।
+- `navSubs` → `openUrl()`; Library-র "Your channel"/"Notifications"/
+  "YouTube history" → ব্রাউজারে (নেটিভ Library-শিট ডাউনলোড/প্লেগুলোর জন্য রইল)।
+- `startGoogleSignIn()` → আর WebView-এ `loadUrl` নয়, **ব্রাউজারে** সাইন-ইন
+  (এখানেই গুগল দেয়)। সাবটাইটেল এখন সৎ: "Opens in your browser — Google blocks
+  in-app sign-in"।
+- Settings → Web → নতুন টগল **"Open account pages in browser"** (`acctbrowser`,
+  ডিফল্ট ON) + ব্যাখ্যা-লেখা।
+
+**বিল্ড-টুলচেইন:** `tools/build-offline.sh` যোগ — dl.google.com/repo1.maven.org
+বন্ধ থাকলে npm (jdk11, aaptjs3, minapk) + GitHub মিরর (media3 → LineageOS,
+guava 31.1 → eyasuyuki/keydriver) দিয়ে সম্পূর্ণ বিল্ড। সাথে `tools/ghfetch.py`,
+`tools/stripattr.py`, `tools/zipalign.py`।
+
+**যাচাই:** javac ক্লিন, dex, apksigner verify ✓, zipalign ✓ (০ মিসঅ্যালাইন),
+সার্টিফিকেট v2.05-এর সাথে মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓,
+dex-এ CCT এক্সট্রা/Chrome প্যাকেজ/রাউটিং সব উপস্থিত ✓।

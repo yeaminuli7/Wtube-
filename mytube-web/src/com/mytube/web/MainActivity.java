@@ -254,6 +254,12 @@ public class MainActivity extends Activity {
         navHome = navBtn("Home", "https://m.youtube.com/", 0);
         navShorts = navBtn("Shorts", "https://m.youtube.com/shorts", 1);
         navSubs = navBtn("Subs", "https://m.youtube.com/feed/subscriptions", 2);
+        navSubs.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openUrl("https://m.youtube.com/feed/subscriptions");
+            }
+        });
         navLib = navBtn("Library", "https://m.youtube.com/feed/you", 3);
         navLib.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -961,12 +967,12 @@ public class MainActivity extends Activity {
             pbox.addView(libSection("Account"));
             pbox.addView(accHeaderRow());
             if (isSignedIn()) {
-                pbox.addView(libRow("Your channel", "Open in web",
+                pbox.addView(libRow("Your channel", "Opens in your browser",
                         new View.OnClickListener() {
                             @Override
                             public void onClick(View v) {
                                 dismissLib();
-                                web.loadUrl("https://m.youtube.com/feed/you");
+                                openUrl("https://m.youtube.com/feed/you");
                             }
                         }));
                 pbox.addView(libRow("Switch account",
@@ -994,20 +1000,20 @@ public class MainActivity extends Activity {
             } else {
                 pbox.addView(googleSignInRow());
             }
-            pbox.addView(libRow("Notifications", "Open in web",
+            pbox.addView(libRow("Notifications", "Opens in your browser",
                     new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
                             dismissLib();
-                            web.loadUrl("https://m.youtube.com/feed/notifications");
+                            openUrl("https://m.youtube.com/feed/notifications");
                         }
                     }));
-            pbox.addView(libRow("YouTube history", "Open in web",
+            pbox.addView(libRow("YouTube history", "Opens in your browser",
                     new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
                             dismissLib();
-                            web.loadUrl("https://m.youtube.com/feed/history");
+                            openUrl("https://m.youtube.com/feed/history");
                         }
                     }));
             pbox.addView(libSection("Data"));
@@ -1462,8 +1468,30 @@ public class MainActivity extends Activity {
                         }
                     });
             box.addView(swNav);
+            final android.widget.Switch swAcct = new android.widget.Switch(this);
+            swAcct.setText("Open account pages in browser");
+            swAcct.setTextSize(16);
+            swAcct.setTextColor(0xFFFFFFFF);
+            swAcct.setChecked(prefs.getBoolean("acctbrowser", true));
+            swAcct.setOnCheckedChangeListener(
+                    new android.widget.CompoundButton.OnCheckedChangeListener() {
+                        @Override
+                        public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
+                            prefs.edit().putBoolean("acctbrowser", on).apply();
+                        }
+                    });
+            box.addView(swAcct);
+            android.widget.TextView acctHint = new android.widget.TextView(this);
+            acctHint.setText("Subscriptions, history, notifications and your channel open "
+                    + "in a real browser, where you can sign in. Google blocks sign-in "
+                    + "inside embedded app views.");
+            acctHint.setTextSize(12);
+            acctHint.setTextColor(0xFF6F6F75);
+            acctHint.setPadding(0, 0, 0, dp(6));
+            box.addView(acctHint);
+
             final boolean signedIn = isSignedIn();
-            String accSub = "Use your subscriptions and history";
+            String accSub = "Opens in your browser, where Google allows sign-in";
             if (signedIn) {
                 try {
                     String an = prefs.getString("accName", "");
@@ -2356,11 +2384,127 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* ================================================================
+       In-app browser (Chrome Custom Tabs)
+
+       Google will not serve its sign-in pages to an embedded WebView -
+       that is policy, enforced on Google's servers, and no amount of
+       user-agent work changes it. A Custom Tab is a different thing: it
+       renders with Chrome's engine and stores its cookies in Chrome, so
+       Google serves it normally and the user really can sign in.
+
+       The price of that is isolation: Chrome's cookie jar is not ours, and
+       Chromium's Custom Tabs security model forbids the app from reading
+       it. So the browser can be signed in while the WebView is not, and
+       the two can never be merged. Pages that need an account are therefore
+       shown out here; everything else stays in the WebView, which keeps
+       our ad blocking, theming and native player.
+       ================================================================ */
+
+    /** Packages able to render a Custom Tab, best first. Chrome is preferred
+     *  because it is the browser whose cookie jar the tab will use. */
+    private static final String[] CCT_PKGS = {
+            "com.android.chrome",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "com.google.android.apps.chrome",
+    };
+
+    private String cctPackage() {
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            for (int i = 0; i < CCT_PKGS.length; i++) {
+                try {
+                    pm.getPackageInfo(CCT_PKGS[i], 0);
+                    return CCT_PKGS[i];
+                } catch (Throwable t) {
+                }
+            }
+        } catch (Throwable t) {
+        }
+        return null;
+    }
+
+    /** Open a URL in a real browser surface.
+
+        The extras below are the ones androidx.browser puts on the Intent;
+        Chrome reads them straight off it, so no support library is needed.
+        A null SESSION is valid - androidx.browser sends exactly that when no
+        CustomTabsSession has been created. */
+    private void openInAppBrowser(String url) {
+        try {
+            android.content.Intent i = new android.content.Intent(
+                    android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+            i.addCategory(android.content.Intent.CATEGORY_BROWSABLE);
+            android.os.Bundle extras = new android.os.Bundle();
+            extras.putBinder("android.support.customtabs.extra.SESSION", null);
+            extras.putInt("android.support.customtabs.extra.TOOLBAR_COLOR", 0xFF0F0F0F);
+            extras.putInt("android.support.customtabs.extra.SECONDARY_TOOLBAR_COLOR",
+                    0xFF0F0F0F);
+            i.putExtras(extras);
+            String pkg = cctPackage();
+            if (pkg != null) {
+                i.setPackage(pkg);
+            }
+            startActivity(i);
+        } catch (Throwable t) {
+            try {
+                android.widget.Toast.makeText(this, "No browser available",
+                        android.widget.Toast.LENGTH_SHORT).show();
+            } catch (Throwable t2) {
+            }
+        }
+    }
+
+    /** YouTube pages that are meaningless without an account. */
+    private static boolean isAccountPage(String url) {
+        try {
+            String u = url == null ? "" : url.toLowerCase();
+            int i = u.indexOf("://");
+            if (i >= 0) {
+                u = u.substring(i + 3);
+            }
+            int j = u.indexOf('/');
+            String host = j >= 0 ? u.substring(0, j) : u;
+            String path = j >= 0 ? u.substring(j) : "/";
+            int q = path.indexOf('?');
+            if (q >= 0) {
+                path = path.substring(0, q);
+            }
+            if (!host.equals("youtube.com") && !host.endsWith(".youtube.com")) {
+                return false;
+            }
+            return path.startsWith("/feed/subscriptions")
+                    || path.startsWith("/feed/you")
+                    || path.startsWith("/feed/history")
+                    || path.startsWith("/feed/notifications");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Show a URL where it works best: account pages in the real browser,
+     *  everything else in the WebView. */
+    private void openUrl(String url) {
+        try {
+            if (prefs != null && prefs.getBoolean("acctbrowser", true)
+                    && isAccountPage(url)) {
+                openInAppBrowser(url);
+                return;
+            }
+        } catch (Throwable t) {
+        }
+        try {
+            web.loadUrl(url);
+        } catch (Throwable t) {
+        }
+    }
+
     private void startGoogleSignIn() {
         /* Visible acknowledgement. Without it a tap that works but is then
            rejected by Google is indistinguishable from a dead button. */
         try {
-            android.widget.Toast.makeText(this, "Opening Google sign-in",
+            android.widget.Toast.makeText(this, "Opening Google sign-in in your browser",
                     android.widget.Toast.LENGTH_SHORT).show();
         } catch (Throwable t) {
         }
@@ -2372,10 +2516,10 @@ public class MainActivity extends Activity {
             }
         } catch (Throwable t) {
         }
-        try {
-            web.loadUrl(SIGNIN_URL);
-        } catch (Throwable t) {
-        }
+        /* Google will not serve this to our WebView, so it has to open in a
+           real browser surface. The session lands in Chrome, which is also
+           what makes the account pages below work. */
+        openInAppBrowser(SIGNIN_URL);
     }
 
     private void signOut() {
@@ -2466,7 +2610,7 @@ public class MainActivity extends Activity {
         t1.setTypeface(null, 1);
         txt.addView(t1);
         android.widget.TextView t2 = new android.widget.TextView(this);
-        t2.setText("Watch with your subscriptions");
+        t2.setText("Opens in your browser — Google blocks in-app sign-in");
         t2.setTextColor(0xFF9A9A9A);
         t2.setTextSize(12);
         txt.addView(t2);
