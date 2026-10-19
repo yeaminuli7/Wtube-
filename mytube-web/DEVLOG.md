@@ -1439,3 +1439,33 @@ guava 31.1 → eyasuyuki/keydriver) দিয়ে সম্পূর্ণ ব
 **যাচাই:** javac ক্লিন, dex, apksigner verify ✓, zipalign ✓ (০ মিসঅ্যালাইন),
 সার্টিফিকেট v2.05-এর সাথে মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓,
 dex-এ CCT এক্সট্রা/Chrome প্যাকেজ/রাউটিং সব উপস্থিত ✓।
+
+---
+
+## v2.07 — সব লগইন অপশন সরানো (vc 84)
+
+**ইউজার-নির্দেশ:** "remove all login option we don't need that"।
+
+v2.02 থেকে v2.06 পর্যন্ত যত সাইন-ইন কাজ ছিল, সব উল্টে দেওয়া হলো —
+কারণ গুগল যাই হোক WebView-এ সাইন-ইন দেয় না, আর ইউজারের দরকারও নেই।
+
+**যা মুছে ফেলা হলো (সব):**
+- Profile/Account সেকশন — "Your channel", "Switch account", "Sign out"
+- `accHeaderRow()`, `googleSignInRow()` — লগইন UI-এর দুটো ভিউ
+- Settings → Web-এর "Sign in with Google"/"Google account" রো + এর
+  সাইন-আউট কনফার্ম ডায়ালগ
+- `isSignedIn()`, `startGoogleSignIn()`, `signOut()`, `SIGNIN_URL`
+- v2.05-এর সাইন-ইন প্রোব: `MT_SIGNIN_PROBE`, `uaFixJs()`, `chromeMajor()`
+- Profile-হেডারের "Signed in"/"Not signed in — open Account to sign in"
+  লেখা → নিরপেক্ষ **"Wtube" / "Your activity and data"**
+
+**যা রাখা হলো:**
+- `openUrl()` / `openInAppBrowser()` / `isAccountPage()` — এগুলো লগইনের
+  জন্য নয়, Subs-এর মতো পেজ ব্রাউজারে খোলার জন্য। তবে `acctbrowser`
+  ডিফল্ট এখন **OFF** (আগে ON ছিল) — অ্যাপের ভেতরেই থাকবে।
+- `isSigninPath()` — সাইন-ইন পেজে এখন **কিছুই ইনজেক্ট হয় না**, গুগল
+  যেমন পাঠায় ঠিক তেমনই চলবে (আগে প্রোব + UA-ফিক্স পাঠাতো)।
+
+**যাচাই:** vc 84 / name 2.07, APK 4,880,287 B, সার্টিফিকেট v2.05/2.06-এর
+সাথে মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓, dex-স্ট্রিং অডিটে
+"Sign in with Google"/"Sign out"/"Your channel"/"Google account" — সব **০** ✓।

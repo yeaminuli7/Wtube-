@@ -64,58 +64,14 @@ public class MainActivity extends Activity {
     /** Injected on sign-in pages instead of the YouTube bundle: lets the page
      *  behave exactly as Google shipped it. Recognises Google's rejection both
      *  by its URL and by the wording on the page. */
-    private static final String MT_SIGNIN_PROBE =
-            "(function(){try{"
-            + "var t=(document.body?document.body.textContent:'')||'';"
-            + "var bad=/v3\\/signin\\/rejected/.test(location.href||'')"
-            + "||/may not be secure/i.test(t)||/disallowed_useragent/i.test(t);"
-            + "if(bad&&window.MTApp&&MTApp.toast){"
-            + "MTApp.toast('Google blocked sign-in in this app view');}}catch(e){}})();";
-
-    /** Present Chrome's brand list to JavaScript.
+        /** Present Chrome's brand list to JavaScript.
      *
      *  WebView exposes navigator.userAgentData with an "Android WebView" brand,
      *  which is a second, JS-readable copy of the Sec-CH-UA leak we cannot fix
      *  at the HTTP layer. Google's sign-in page is JavaScript-heavy and can read
      *  it directly, so report the same brands a real Chrome for Android would. */
-    private static String uaFixJs(String chromeMajor) {
-        String v = (chromeMajor == null || chromeMajor.length() == 0) ? "138" : chromeMajor;
-        String b = "[{brand:'Not)A;Brand',version:'99'},"
-                + "{brand:'Chromium',version:'" + v + "'},"
-                + "{brand:'Google Chrome',version:'" + v + "'}]";
-        return "(function(){try{"
-                + "var B=" + b + ";"
-                + "var d={brands:B,mobile:true,platform:'Android',"
-                + "toJSON:function(){return{brands:B,mobile:true,platform:'Android'};},"
-                + "getHighEntropyValues:function(h){return Promise.resolve({"
-                + "architecture:'',bitness:'',model:'',platformVersion:'13.0.0',"
-                + "uaFullVersion:'" + v + ".0.0.0',fullVersionList:B});}};"
-                + "Object.defineProperty(navigator,'userAgentData',"
-                + "{get:function(){return d;},configurable:true});"
-                + "}catch(e){}})();";
-    }
-
-    /** Chrome major version out of our user agent, for the JS brand list. */
-    private static String chromeMajor(String ua) {
-        try {
-            if (ua == null) {
-                return "138";
-            }
-            int i = ua.indexOf("Chrome/");
-            if (i < 0) {
-                return "138";
-            }
-            String rest = ua.substring(i + 7);
-            int sp = rest.indexOf(' ');
-            String v = sp > 0 ? rest.substring(0, sp) : rest;
-            int dot = v.indexOf('.');
-            return dot > 0 ? v.substring(0, dot) : v;
-        } catch (Throwable t) {
-            return "138";
-        }
-    }
-
-    /** True for YouTube's own account/sign-in screens.
+        /** Chrome major version out of our user agent, for the JS brand list. */
+        /** True for YouTube's own account/sign-in screens.
      *
      *  These live on youtube.com, so the host check alone would hand them the
      *  full bundle - but core.js rewrites global JSON.parse and fetch, which is
@@ -875,11 +831,6 @@ public class MainActivity extends Activity {
 
     private void showProfile() {
         try {
-            String pc = prefs.getString("accPic", "");
-            if (accBmp == null && pc.length() > 8) {
-                fetchAvatar(pc);
-            }
-            String nm = prefs.getString("accName", "");
             android.widget.LinearLayout hh = new android.widget.LinearLayout(this);
             hh.setOrientation(android.widget.LinearLayout.HORIZONTAL);
             hh.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -895,14 +846,12 @@ public class MainActivity extends Activity {
             hn.setTextSize(17);
             hn.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             hn.setTextColor(0xFFF2F2F2);
-            hn.setText(nm.length() > 0 ? nm
-                    : (pc.length() > 0 ? "Signed in" : "Account"));
+            hn.setText("Wtube");
             ht.addView(hn);
             android.widget.TextView hs = new android.widget.TextView(this);
             hs.setTextSize(12);
             hs.setTextColor(0xFF9A9A9A);
-            hs.setText(nm.length() > 0 || pc.length() > 0
-                    ? "Signed in to YouTube" : "Not signed in - open Account to sign in");
+            hs.setText("Your activity and data");
             ht.addView(hs);
             hh.addView(ht, htp);
             android.widget.ScrollView psv = new android.widget.ScrollView(this);
@@ -964,42 +913,6 @@ public class MainActivity extends Activity {
                             showPlaylists();
                         }
                     }));
-            pbox.addView(libSection("Account"));
-            pbox.addView(accHeaderRow());
-            if (isSignedIn()) {
-                pbox.addView(libRow("Your channel", "Opens in your browser",
-                        new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                dismissLib();
-                                openUrl("https://m.youtube.com/feed/you");
-                            }
-                        }));
-                pbox.addView(libRow("Switch account",
-                        "Sign in with a different Google account",
-                        new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                startGoogleSignIn();
-                            }
-                        }));
-                pbox.addView(libRow("Sign out", "Clears the saved YouTube session",
-                        new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                confirmDo("Sign out?",
-                                        "Clears the saved YouTube session on this device",
-                                        new Runnable() {
-                                            @Override
-                                            public void run() {
-                                                signOut();
-                                            }
-                                        });
-                            }
-                        }));
-            } else {
-                pbox.addView(googleSignInRow());
-            }
             pbox.addView(libRow("Notifications", "Opens in your browser",
                     new View.OnClickListener() {
                         @Override
@@ -1472,7 +1385,7 @@ public class MainActivity extends Activity {
             swAcct.setText("Open account pages in browser");
             swAcct.setTextSize(16);
             swAcct.setTextColor(0xFFFFFFFF);
-            swAcct.setChecked(prefs.getBoolean("acctbrowser", true));
+            swAcct.setChecked(prefs.getBoolean("acctbrowser", false));
             swAcct.setOnCheckedChangeListener(
                     new android.widget.CompoundButton.OnCheckedChangeListener() {
                         @Override
@@ -1482,44 +1395,14 @@ public class MainActivity extends Activity {
                     });
             box.addView(swAcct);
             android.widget.TextView acctHint = new android.widget.TextView(this);
-            acctHint.setText("Subscriptions, history, notifications and your channel open "
-                    + "in a real browser, where you can sign in. Google blocks sign-in "
-                    + "inside embedded app views.");
+            acctHint.setText("Subscriptions, history and notifications open in your "
+                    + "browser instead of inside the app. Off by default; turn on if you "
+                    + "are signed into YouTube in Chrome.");
             acctHint.setTextSize(12);
             acctHint.setTextColor(0xFF6F6F75);
             acctHint.setPadding(0, 0, 0, dp(6));
             box.addView(acctHint);
 
-            final boolean signedIn = isSignedIn();
-            String accSub = "Opens in your browser, where Google allows sign-in";
-            if (signedIn) {
-                try {
-                    String an = prefs.getString("accName", "");
-                    if (an != null && an.length() > 0) {
-                        accSub = "Signed in as " + an;
-                    }
-                } catch (Throwable tAcc) {
-                }
-            }
-            box.addView(libRow(signedIn ? "Google account" : "Sign in with Google",
-                    accSub,
-                    new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            if (isSignedIn()) {
-                                confirmDo("Sign out?",
-                                        "Clears the saved YouTube session on this device",
-                                        new Runnable() {
-                                            @Override
-                                            public void run() {
-                                                signOut();
-                                            }
-                                        });
-                            } else {
-                                startGoogleSignIn();
-                            }
-                        }
-                    }));
             android.widget.TextView secD = new android.widget.TextView(this);
             secD.setText("Downloads");
             secD.setTextSize(13);
@@ -2257,10 +2140,7 @@ public class MainActivity extends Activity {
        ================================================================ */
 
     /** Google's YouTube sign-in entry point (kept inside the app WebView). */
-    private static final String SIGNIN_URL =
-            "https://m.youtube.com/signin?action_handle_signin=true&app=m";
-
-    private void flushCookies() {
+        private void flushCookies() {
         try {
             if (Build.VERSION.SDK_INT >= 21) {
                 android.webkit.CookieManager.getInstance().flush();
@@ -2346,28 +2226,27 @@ public class MainActivity extends Activity {
     /** What to inject for this page.
      *
      *  The YouTube bundle rewrites JSON.parse and fetch and restyles the top
-     *  bar. That is exactly what we want on YouTube and exactly what must not
-     *  happen on Google's sign-in page, where it can deadlock the flow. So the
-     *  sign-in page only gets a tiny probe that reports a Google-side block. */
+     *  bar. That is what we want on YouTube, and not on Google's sign-in pages
+     *  - our rewriting can deadlock a page whose whole job is to post
+     *  credentials and follow redirects. Those pages get nothing injected, so
+     *  they behave exactly as Google shipped them. */
     private String injectFor(String url) {
         try {
             String h = hostOfUrl(url);
             if (h.length() == 0) {
                 return "";
             }
-            String fix = uaFixJs(chromeMajor(mtUa));
             if (h.equals("youtube.com") || h.endsWith(".youtube.com")
                     || h.equals("youtu.be")) {
                 /* YouTube's own sign-in screens live on youtube.com, so the host
-                   check alone would give them the full bundle. They get the same
-                   clean treatment as accounts.google.com instead. */
+                   check alone would give them the full bundle. */
                 if (isSigninPath(url)) {
-                    return MT_SIGNIN_PROBE + fix;
+                    return "";
                 }
                 return coreJs + themeJs() + injectJs;
             }
             if (h.equals("accounts.google.com") || h.endsWith(".accounts.google.com")) {
-                return MT_SIGNIN_PROBE + fix;
+                return "";
             }
             return "";
         } catch (Throwable t) {
@@ -2376,15 +2255,7 @@ public class MainActivity extends Activity {
     }
 
     /** True when inject.js has reported an account name for the signed-in user. */
-    private boolean isSignedIn() {
-        try {
-            return prefs.getString("accName", "").length() > 0;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /* ================================================================
+        /* ================================================================
        In-app browser (Chrome Custom Tabs)
 
        Google will not serve its sign-in pages to an embedded WebView -
@@ -2500,134 +2371,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void startGoogleSignIn() {
-        /* Visible acknowledgement. Without it a tap that works but is then
-           rejected by Google is indistinguishable from a dead button. */
-        try {
-            android.widget.Toast.makeText(this, "Opening Google sign-in in your browser",
-                    android.widget.Toast.LENGTH_SHORT).show();
-        } catch (Throwable t) {
-        }
-        dismissLib();
-        try {
-            if (settingsDlgRef != null) {
-                settingsDlgRef.dismiss();
-                settingsDlgRef = null;
-            }
-        } catch (Throwable t) {
-        }
-        /* Google will not serve this to our WebView, so it has to open in a
-           real browser surface. The session lands in Chrome, which is also
-           what makes the account pages below work. */
-        openInAppBrowser(SIGNIN_URL);
-    }
-
-    private void signOut() {
-        try {
-            android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
-            if (Build.VERSION.SDK_INT >= 21) {
-                cm.removeAllCookies(null);
-            } else {
-                cm.removeAllCookie();
-            }
-            cm.flush();
-        } catch (Throwable t) {
-        }
-        try {
-            prefs.edit().remove("accName").remove("accPic").apply();
-        } catch (Throwable t) {
-        }
-        accBmp = null;
-        dismissLib();
-        try {
-            web.loadUrl("https://m.youtube.com/");
-        } catch (Throwable t) {
-        }
-    }
-
-    /** Avatar + account name header, or a "not signed in" line when signed out. */
-    private android.view.View accHeaderRow() {
-        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
-        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(12), 0, dp(12));
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-
-        android.widget.ImageView iv = new android.widget.ImageView(this);
-        int s = dp(40);
-        row.addView(iv, new android.widget.LinearLayout.LayoutParams(s, s));
-        if (accBmp != null) {
-            iv.setImageBitmap(accBmp);
-            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-        } else {
-            iv.setImageDrawable(null);
-            iv.setBackgroundColor(0xFF2A2A2E);
-        }
-
-        android.widget.LinearLayout txt = new android.widget.LinearLayout(this);
-        txt.setOrientation(android.widget.LinearLayout.VERTICAL);
-        txt.setPadding(dp(12), 0, 0, 0);
-        android.widget.TextView t1 = new android.widget.TextView(this);
-        String nm = null;
-        try {
-            nm = prefs.getString("accName", "");
-        } catch (Throwable t) {
-        }
-        if (nm == null || nm.length() == 0) {
-            nm = "Not signed in";
-        }
-        t1.setText(nm);
-        t1.setTextColor(0xFFF2F2F2);
-        t1.setTextSize(15);
-        t1.setMaxLines(1);
-        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        txt.addView(t1);
-
-        android.widget.TextView t2 = new android.widget.TextView(this);
-        t2.setText(isSignedIn() ? "Signed in to YouTube" : "Sign in to use subscriptions and history");
-        t2.setTextColor(0xFF9A9A9A);
-        t2.setTextSize(12);
-        t2.setMaxLines(1);
-        txt.addView(t2);
-
-        row.addView(txt);
-        return row;
-    }
-
-    /** Prominent "Sign in with Google" row, shown when signed out. */
-    private android.view.View googleSignInRow() {
-        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
-        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        row.setPadding(dp(12), dp(12), dp(12), dp(12));
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        row.setBackgroundColor(0xFF1E2228);
-
-        android.widget.LinearLayout txt = new android.widget.LinearLayout(this);
-        txt.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.TextView t1 = new android.widget.TextView(this);
-        t1.setText("Sign in with Google");
-        t1.setTextColor(0xFFF2F2F2);
-        t1.setTextSize(15);
-        t1.setTypeface(null, 1);
-        txt.addView(t1);
-        android.widget.TextView t2 = new android.widget.TextView(this);
-        t2.setText("Opens in your browser — Google blocks in-app sign-in");
-        t2.setTextColor(0xFF9A9A9A);
-        t2.setTextSize(12);
-        txt.addView(t2);
-        android.widget.LinearLayout.LayoutParams lp =
-                new android.widget.LinearLayout.LayoutParams(0, -2, 1f);
-        row.addView(txt, lp);
-
-        row.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startGoogleSignIn();
-            }
-        });
-        return row;
-    }
-
-    private android.view.View libSection(String t) {
+            /** Avatar + account name header, or a "not signed in" line when signed out. */
+        /** Prominent "Sign in with Google" row, shown when signed out. */
+        private android.view.View libSection(String t) {
         android.widget.TextView v = new android.widget.TextView(this);
         v.setText(t);
         v.setTextColor(hslColor(huePanel));
