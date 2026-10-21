@@ -50,6 +50,10 @@ public class DownloadService extends Service {
     public static final String EXTRA_V = "v";
     public static final String EXTRA_A = "a";
     public static final String EXTRA_LABEL = "label"; // যেমন "720p" / "192kbps"
+    /** ইউটিউব-ভিডিও-আইডি (থাম্বনেইল/মেটাডেটার জন্য; না থাকলে ফাঁকা) */
+    public static final String EXTRA_VID = "vid";
+    /** আপলোডার-চ্যানেলের নাম (মেটাডেটার জন্য; না থাকলে ফাঁকা) */
+    public static final String EXTRA_CH = "chn";
     public static final String EXTRA_DIRECT = "direct"; // সরাসরি এক-ফাইল URL
     public static final String EXTRA_MP3 = "mp3"; // int: বিটরেট (128/192/320)
     public static final String EXTRA_SRT = "srt"; // ক্যাপশন baseUrl
@@ -73,6 +77,8 @@ public class DownloadService extends Service {
         String v;
         String a;
         String label;
+        String vid; // ইউটিউব-ভিডিও-আইডি
+        String ch;  // আপলোডার-চ্যানেল
         String direct;
         String srt;
         int mp3;
@@ -148,6 +154,8 @@ public class DownloadService extends Service {
         j.v = i.getStringExtra(EXTRA_V);
         j.a = i.getStringExtra(EXTRA_A);
         j.label = i.getStringExtra(EXTRA_LABEL);
+        j.vid = i.getStringExtra(EXTRA_VID);
+        j.ch = i.getStringExtra(EXTRA_CH);
         j.direct = i.getStringExtra(EXTRA_DIRECT);
         j.srt = i.getStringExtra(EXTRA_SRT);
         j.mp3 = i.getIntExtra(EXTRA_MP3, 0);
@@ -193,6 +201,8 @@ public class DownloadService extends Service {
         public String direct;
         public String srt;
         public int mp3;
+        public String vid; // ইউটিউব-আইডি (চলমান জবের থাম্বনেইলের জন্য)
+        public String ch;
     }
 
     private static final java.util.ArrayList<Snap> sDone = new java.util.ArrayList<>();
@@ -212,6 +222,8 @@ public class DownloadService extends Service {
         s.paused = j.paused;
         s.v = j.v;
         s.a = j.a;
+        s.vid = j.vid;
+        s.ch = j.ch;
         s.direct = j.direct;
         s.srt = j.srt;
         s.mp3 = j.mp3;
@@ -389,7 +401,7 @@ public class DownloadService extends Service {
                 if (j.cancel) {
                     return;
                 }
-                savePublic(out, safeName(j.title, "video") + ".mp4", "video/mp4");
+                savePublic(j, out, safeName(j.title, "video") + ".mp4", "video/mp4");
             } else if (j.v != null && j.v.length() > 0 && j.a != null && j.a.length() > 0) {
                 downloadMerged(j, dir);
             } else if (j.v != null && j.v.length() > 0) {
@@ -398,7 +410,7 @@ public class DownloadService extends Service {
                 if (j.cancel) {
                     return;
                 }
-                savePublic(out, safeName(j.title, "audio") + ".m4a", "audio/mp4");
+                savePublic(j, out, safeName(j.title, "audio") + ".m4a", "audio/mp4");
             }
         } finally {
             deleteDir(dir);
@@ -427,7 +439,7 @@ public class DownloadService extends Service {
         FileOutputStream fo = new FileOutputStream(f);
         fo.write(srt.getBytes("UTF-8"));
         fo.close();
-        savePublic(f, safeName(j.title, j.label != null ? j.label : "") + ".srt",
+        savePublic(j, f, safeName(j.title, j.label != null ? j.label : "") + ".srt",
                 "application/x-subrip");
     }
 
@@ -480,7 +492,7 @@ public class DownloadService extends Service {
                 long t0 = System.currentTimeMillis();
                 int r = Ffmpeg.mp3(fa.getAbsolutePath(), out.getAbsolutePath(), j.mp3);
                 if (r == 0 && out.length() > 1024) {
-                    savePublic(out, base + ".mp3", "audio/mpeg");
+                    savePublic(j, out, base + ".mp3", "audio/mpeg");
                     j.doneMsg = "Saved: " + base + ".mp3";
                     StreamStore.note("ffmpeg mp3 ok " + out.length() + " bytes in "
                             + (System.currentTimeMillis() - t0) + "ms");
@@ -500,7 +512,7 @@ public class DownloadService extends Service {
                 notifyProgress(j);
                 File out = new File(dir, "out.mp3");
                 convertAudio(fa, out, j.mp3, j, true);
-                savePublic(out, base + ".mp3", "audio/mpeg");
+                savePublic(j, out, base + ".mp3", "audio/mpeg");
                 j.doneMsg = "Saved: " + base + ".mp3";
                 StreamStore.note("mp3 via device encoder");
                 return;
@@ -516,7 +528,7 @@ public class DownloadService extends Service {
                 notifyProgress(j);
                 File out = new File(dir, "out2.mp3");
                 convertAudio(fa, out, j.mp3, j, false);
-                savePublic(out, base + ".mp3", "audio/mpeg");
+                savePublic(j, out, base + ".mp3", "audio/mpeg");
                 j.doneMsg = "Saved: " + base + ".mp3";
                 StreamStore.note("mp3 via lame");
                 return;
@@ -527,7 +539,7 @@ public class DownloadService extends Service {
         }
         // ৩) শেষ-ভরসা: MP3 না-পারলে অডিও m4a হিসেবে বাঁচাও — ব্যবহারকারী অডিও পাবেই
         try {
-            savePublic(fa, safeName(j.title, "audio") + ".m4a", "audio/mp4");
+            savePublic(j, fa, safeName(j.title, "audio") + ".m4a", "audio/mp4");
             String why2 = lastErr != null && lastErr.getMessage() != null
                     && lastErr.getMessage().length() > 0 ? lastErr.getMessage()
                     : "no encoder";
@@ -981,7 +993,7 @@ public class DownloadService extends Service {
             mux(fv, fa, out, j);
             StreamStore.note("java mux ok");
         }
-        savePublic(out, safeName(j.title, j.label) + ".mp4", "video/mp4");
+        savePublic(j, out, safeName(j.title, j.label) + ".mp4", "video/mp4");
     }
 
     // ---------- মিক্সার (EOS-নিরাপদ, এক-পাঠ) ----------
@@ -1285,7 +1297,8 @@ public class DownloadService extends Service {
 
     // ---------- সেভ + নোটিফিকেশন ----------
 
-    private Uri savePublic(File src, String name, String mime) throws Exception {
+    private Uri savePublic(Job j, File src, String name, String mime) throws Exception {
+        Uri out;
         if (Build.VERSION.SDK_INT >= 29) {
             ContentValues cv = new ContentValues();
             cv.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name);
@@ -1302,14 +1315,23 @@ public class DownloadService extends Service {
             cv.clear();
             cv.put(android.provider.MediaStore.Downloads.IS_PENDING, 0);
             getContentResolver().update(uri, cv, null, null);
-            return uri;
+            out = uri;
+        } else {
+            File dir = new File(Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS), "WTube");
+            dir.mkdirs();
+            File dst = new File(dir, name);
+            copy(src, new FileOutputStream(dst));
+            out = Uri.fromFile(dst);
         }
-        File dir = new File(Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_DOWNLOADS), "WTube");
-        dir.mkdirs();
-        File dst = new File(dir, name);
-        copy(src, new FileOutputStream(dst));
-        return Uri.fromFile(dst);
+        // ফাইল-নাম যা বহন করতে পারে না — ভিডিও-আইডি, চ্যানেল, কোয়ালিটি
+        try {
+            if (j != null) {
+                DlMeta.put(this, name, j.vid, j.title, j.ch, j.label);
+            }
+        } catch (Throwable t) {
+        }
+        return out;
     }
 
     private void copy(File src, OutputStream os) throws Exception {

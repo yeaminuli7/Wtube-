@@ -49,6 +49,7 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
+| [v2.08](https://github.com/yeaminuli7/vr/releases/tag/v2.08) | 2.08 (vc 85) | Downloads screen rebuilt YouTube-style: thumbnail cards with duration badge, channel and size, three-dot menu, storage line, live progress |
 | [v2.07](https://github.com/yeaminuli7/vr/releases/tag/v2.07) | 2.07 (vc 84) | All login options removed: no sign-in row, no Account section, no sign-out. Sign-in pages get no injection; account-page browser routing now off by default |
 | [v2.06](https://github.com/yeaminuli7/vr/releases/tag/v2.06) | 2.06 (vc 83) | Telegram-style in-app browser (Custom Tabs): Subs/History/Your channel open signed in; offline build script |
 | [v2.05](https://github.com/yeaminuli7/vr/releases/tag/v2.05) | 2.05 (vc 82) | Sign-in flow hardened: clean injection on YouTube sign-in pages, Chrome brands in JS, intent:// fallback |

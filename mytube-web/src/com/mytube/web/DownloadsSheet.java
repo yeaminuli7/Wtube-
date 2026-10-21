@@ -5,24 +5,50 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
-import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+
 /**
- * ইন-অ্যাপ ডাউনলোড-স্ক্রিন (SnapTube-ধাঁচ): প্রতিটি জবের লাইভ প্রগ্রেস
- * (% · গতি · ধাপ), লাইন, সাম্প্রতিক-শেষ — প্রতি ০.৫ সেকেন্ডে রিফ্রেশ।
+ * ইউটিউব-ধাঁচের ডাউনলোড-স্ক্রিন: প্রতিটি ভিডিও 16:9 থাম্বনেইল + দৈর্ঘ্য-ব্যাজ
+ * সহ কার্ড হিসেবে, নিচে চ্যানেল · সাইজ, ডানে তিন-বিন্দু মেনু (Play/Share/Delete)।
+ *
+ * থাম্বনেইল ফাইল থেকেই তোলা হয় (MediaMetadataRetriever), তাই অফলাইনেও কাজ করে
+ * এবং আগে নামানো ভিডিওতেও থাম্বনেইল দেখা যায়।
+ *
+ * লিস্টটা প্রতি ০.৫ সেকেন্ডে নতুন করে বানানো হয় না — শুধু প্রগ্রেস-লাইনগুলো
+ * আপডেট হয়; জব/ফাইলের সেট বদলালেই পুরো রিবিল্ড।
  */
 public final class DownloadsSheet {
 
     private DownloadsSheet() {
     }
+
+    private static final int TH_W = 128;  // dp, 16:9
+    private static final int TH_H = 72;
+    private static final int JOB_W = 108;
+    private static final int JOB_H = 61;
+
+    /** প্রতি টিক-এ আপডেট হওয়া কাজগুলো। */
+    private static final ArrayList<Runnable> TICKERS = new ArrayList<Runnable>();
+    private static String sig;
 
     public static void show(final Activity a) {
         try {
@@ -30,20 +56,12 @@ public final class DownloadsSheet {
             ScrollView sv = new ScrollView(a);
             final LinearLayout box = new LinearLayout(a);
             box.setOrientation(LinearLayout.VERTICAL);
-            box.setPadding(dp(a, 20), dp(a, 18), dp(a, 20), dp(a, 16));
+            box.setPadding(dp(a, 16), dp(a, 18), dp(a, 16), dp(a, 20));
             box.setBackgroundColor(0xFF0F0F0F);
             sv.setBackgroundColor(0xFF0F0F0F);
             sv.addView(box);
             sv.setVerticalScrollBarEnabled(false);
-            TextView title = new TextView(a);
-            title.setText("Downloads");
-            title.setTextSize(24);
-            title.setTypeface(null, 1);
-            title.setTextColor(0xFFF2F2F2);
-            box.addView(title);
-            final LinearLayout list = new LinearLayout(a);
-            list.setOrientation(LinearLayout.VERTICAL);
-            box.addView(list);
+
             final Handler h = new Handler(Looper.getMainLooper());
             final Runnable tick = new Runnable() {
                 @Override
@@ -51,7 +69,18 @@ public final class DownloadsSheet {
                     if (!dg.isShowing()) {
                         return;
                     }
-                    rebuild(a, list);
+                    String now = signature(a);
+                    if (now == null || !now.equals(sig)) {
+                        sig = now;
+                        rebuild(a, box);
+                    } else {
+                        for (int i = 0; i < TICKERS.size(); i++) {
+                            try {
+                                TICKERS.get(i).run();
+                            } catch (Throwable t) {
+                            }
+                        }
+                    }
                     h.postDelayed(this, 500);
                 }
             };
@@ -67,6 +96,8 @@ public final class DownloadsSheet {
                 @Override
                 public void onDismiss(DialogInterface d) {
                     h.removeCallbacks(tick);
+                    TICKERS.clear();
+                    sig = null;
                 }
             });
             dg.show();
@@ -75,105 +106,78 @@ public final class DownloadsSheet {
         }
     }
 
-    private static final boolean[] secActive = {true};
-    private static final boolean[] secDone = {true};
-    private static final boolean[] secWL = {false};
-    private static final boolean[] secPL = {false};
-    private static String openPl = null;
-    private static final boolean[] secHist = {false};
-
-    private static void rebuild(Context c, LinearLayout list) {
+    /** জব + ফাইলের সেট — এটা বদলালেই লিস্ট নতুন করে বানাতে হবে। */
+    private static String signature(Context c) {
+        StringBuilder b = new StringBuilder();
         try {
-            list.removeAllViews();
-            java.util.ArrayList<DownloadService.Snap> snaps = DownloadService.snapshot();
-            java.util.ArrayList<Object[]> dls = MainActivity.queryDownloads(c);
-            org.json.JSONArray wl = Library.wl(c);
-            java.util.ArrayList<String> pls = Library.playlists(c);
-            java.util.ArrayList<Object[]> hist = DownloadService.histList(c);
-            if (snaps.isEmpty() && dls.isEmpty() && wl.length() == 0
-                    && pls.isEmpty() && hist.isEmpty()) {
-                TextView e = new TextView(c);
-                e.setText("No downloads yet");
-                e.setTextColor(0xFF6F6F75);
-                e.setTextSize(13);
-                e.setPadding(0, dp(c, 12), 0, 0);
-                list.addView(e);
+            ArrayList<DownloadService.Snap> sn = DownloadService.snapshot();
+            for (int i = 0; i < sn.size(); i++) {
+                b.append(sn.get(i).slot).append(',');
+            }
+            b.append('|');
+            ArrayList<Object[]> dls = MainActivity.queryDownloads(c);
+            for (int i = 0; i < dls.size(); i++) {
+                b.append(dls.get(i)[0]).append(':').append(dls.get(i)[1]).append(',');
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+        return b.toString();
+    }
+
+    private static void rebuild(final Activity a, LinearLayout box) {
+        try {
+            TICKERS.clear();
+            box.removeAllViews();
+
+            ArrayList<DownloadService.Snap> snaps = DownloadService.snapshot();
+            ArrayList<Object[]> dls = MainActivity.queryDownloads(a);
+
+            // ---- শিরোনাম + স্টোরেজ ----
+            TextView title = new TextView(a);
+            title.setText("Downloads");
+            title.setTextSize(24);
+            title.setTypeface(null, 1);
+            title.setTextColor(0xFFF2F2F2);
+            box.addView(title);
+
+            long used = 0;
+            for (int i = 0; i < dls.size(); i++) {
+                used += ((Long) dls.get(i)[1]).longValue();
+            }
+            TextView st = new TextView(a);
+            st.setText(storageLine(used));
+            st.setTextColor(0xFF9A9A9A);
+            st.setTextSize(12);
+            st.setPadding(0, dp(a, 2), 0, dp(a, 10));
+            box.addView(st);
+
+            if (snaps.isEmpty() && dls.isEmpty()) {
+                box.addView(emptyState(a));
                 return;
             }
-            // ---- Active: চলমান + সাম্প্রতিক জব (Pause/Resume/Retry/Cancel) ----
+
+            // ---- চলমান / সদ্য শেষ ----
             if (!snaps.isEmpty()) {
-                list.addView(section(c, list, "Active", snaps.size(), secActive[0], secActive));
-                if (secActive[0]) {
-                    for (int i2 = 0; i2 < snaps.size(); i2++) {
-                        list.addView(row(c, snaps.get(i2)));
-                        if (i2 < snaps.size() - 1) {
-                            View hair = new View(c);
-                            hair.setBackgroundColor(0xFF232326);
-                            hair.setLayoutParams(new LinearLayout.LayoutParams(-1,
-                                    Math.max(1, dp(c, 1))));
-                            list.addView(hair);
-                        }
+                box.addView(sectionLabel(a, "DOWNLOADING"));
+                for (int i = 0; i < snaps.size(); i++) {
+                    box.addView(jobCard(a, snaps.get(i)));
+                    if (i < snaps.size() - 1) {
+                        box.addView(hair(a));
                     }
                 }
+                if (!dls.isEmpty()) {
+                    box.addView(hair(a));
+                }
             }
-            // ---- Completed: নামানো ফাইল ----
+
+            // ---- নামানো ভিডিও ----
             if (!dls.isEmpty()) {
-                list.addView(section(c, list, "Completed", dls.size(), secDone[0], secDone));
-                if (secDone[0]) {
-                    int lim = Math.min(dls.size(), 30);
-                    for (int i2 = 0; i2 < lim; i2++) {
-                        list.addView(fileRow(c, dls.get(i2)));
-                        if (i2 < lim - 1) {
-                            View hair = new View(c);
-                            hair.setBackgroundColor(0xFF1C1C1F);
-                            hair.setLayoutParams(new LinearLayout.LayoutParams(-1,
-                                    Math.max(1, dp(c, 1))));
-                            list.addView(hair);
-                        }
-                    }
-                }
-            }
-            // ---- Playlists: নাম-দেওয়া তালিকা (ট্যাপে ভেতরের ভিডিও) ----
-            if (!pls.isEmpty()) {
-                list.addView(section(c, list, "Playlists", pls.size(), secPL[0], secPL));
-                if (secPL[0]) {
-                    for (int i2 = 0; i2 < pls.size(); i2++) {
-                        String pn = pls.get(i2);
-                        list.addView(plRow(c, list, pn));
-                        if (pn.equals(openPl)) {
-                            org.json.JSONArray items = Library.pl(c, pn);
-                            for (int k2 = 0; k2 < items.length(); k2++) {
-                                org.json.JSONObject o = items.optJSONObject(k2);
-                                if (o == null) {
-                                    continue;
-                                }
-                                list.addView(plItemRow(c, o.optString("id", ""),
-                                        o.optString("t", "")));
-                            }
-                        }
-                    }
-                }
-            }
-            // ---- Watch Later: সেভ-করা ভিডিও ----
-            if (wl.length() > 0) {
-                list.addView(section(c, list, "Watch Later", wl.length(), secWL[0], secWL));
-                if (secWL[0]) {
-                    for (int i2 = 0; i2 < wl.length(); i2++) {
-                        org.json.JSONObject o = wl.optJSONObject(i2);
-                        if (o == null) {
-                            continue;
-                        }
-                        list.addView(wlRow(c, o.optString("id", ""), o.optString("t", "")));
-                    }
-                }
-            }
-            // ---- History: ডাউনলোড-ইতিহাস ----
-            if (!hist.isEmpty()) {
-                list.addView(section(c, list, "History", hist.size(), secHist[0], secHist));
-                if (secHist[0]) {
-                    int lim = Math.min(hist.size(), 30);
-                    for (int i2 = 0; i2 < lim; i2++) {
-                        list.addView(histRow(c, hist.get(i2)));
+                box.addView(sectionLabel(a, "DOWNLOADED"));
+                for (int i = 0; i < dls.size(); i++) {
+                    box.addView(fileCard(a, dls.get(i)));
+                    if (i < dls.size() - 1) {
+                        box.addView(hair(a));
                     }
                 }
             }
@@ -181,362 +185,265 @@ public final class DownloadsSheet {
         }
     }
 
-    /** সেকশন-হেডার: ক্লিকে খোলে/বন্ধ হয় (গণনা + তীর-চিহ্নসহ) */
-    private static View section(final Context c, final LinearLayout list, String title,
-            int count, boolean expanded, final boolean[] flag) {
-        LinearLayout h = new LinearLayout(c);
-        h.setOrientation(LinearLayout.HORIZONTAL);
-        h.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        h.setPadding(0, dp(c, 14), 0, dp(c, 6));
-        TextView t = new TextView(c);
-        t.setText(title);
-        t.setTextColor(0xFFF2F2F2);
-        t.setTextSize(15);
-        t.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-        h.addView(t, new LinearLayout.LayoutParams(-2, -2, 1f));
-        TextView n = new TextView(c);
-        n.setText(String.valueOf(count));
-        n.setTextColor(0xFF9A9A9A);
-        n.setTextSize(12);
-        h.addView(n);
-        SectionArrow ar = new SectionArrow(c);
-        ar.setExpanded(expanded);
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(c, 14), dp(c, 14));
-        alp.leftMargin = dp(c, 8);
-        ar.setLayoutParams(alp);
-        h.addView(ar);
-        h.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                flag[0] = !flag[0];
-                rebuild(c, list);
-            }
-        });
-        return h;
-    }
+    // ------------------------------------------------------------------
+    // কার্ড
+    // ------------------------------------------------------------------
 
-    /** সেকশন-তীর: খোলা = নিচমুখী, বন্ধ = ডানমুখী */
-    private static final class SectionArrow extends View {
-        private final android.graphics.Paint p =
-                new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        private boolean exp = true;
-
-        SectionArrow(Context c) {
-            super(c);
-            p.setColor(0xFF9A9A9A);
-            p.setStyle(android.graphics.Paint.Style.FILL);
-        }
-
-        void setExpanded(boolean e) {
-            exp = e;
-            invalidate();
-        }
-
-        @Override
-        protected void onDraw(android.graphics.Canvas cv) {
-            float w = getWidth();
-            float h = getHeight();
-            android.graphics.Path pa = new android.graphics.Path();
-            if (exp) {
-                pa.moveTo(w * 0.15f, h * 0.35f);
-                pa.lineTo(w * 0.85f, h * 0.35f);
-                pa.lineTo(w * 0.5f, h * 0.8f);
-            } else {
-                pa.moveTo(w * 0.35f, h * 0.15f);
-                pa.lineTo(w * 0.35f, h * 0.85f);
-                pa.lineTo(w * 0.8f, h * 0.5f);
-            }
-            pa.close();
-            cv.drawPath(pa, p);
-        }
-    }
-
-    /** Watch Later-সারি: ট্যাপ = খোলা, চেপে-ধরা = সরানো */
-    private static View wlRow(final Context c, final String id, final String title) {
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(0, dp(c, 10), 0, dp(c, 10));
-        TextView t1 = new TextView(c);
-        t1.setText(title != null && title.length() > 0 ? title : id);
-        t1.setTextColor(0xFFF2F2F2);
-        t1.setTextSize(14);
-        t1.setMaxLines(2);
-        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(t1);
-        r.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    if (c instanceof MainActivity) {
-                        ((MainActivity) c).openVideoById(id, title);
-                    }
-                } catch (Throwable t) {
-                }
-            }
-        });
-        r.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Library.removeWl(c, id);
-                android.widget.Toast.makeText(c, "Removed from Watch Later",
-                        android.widget.Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        });
-        return r;
-    }
-
-    /** প্লেলিস্ট-সারি: ট্যাপে ভেতরের ভিডিওগুলো খোলে/বন্ধ হয় */
-    private static View plRow(final Context c, final LinearLayout list, final String name) {
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.HORIZONTAL);
-        r.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        r.setPadding(0, dp(c, 10), 0, dp(c, 4));
-        TextView t1 = new TextView(c);
-        t1.setText(name);
-        t1.setTextColor(0xFFF2F2F2);
-        t1.setTextSize(14);
-        t1.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-        r.addView(t1, new LinearLayout.LayoutParams(-2, -2, 1f));
-        TextView n = new TextView(c);
-        n.setText(String.valueOf(Library.pl(c, name).length()) + " videos");
-        n.setTextColor(0xFF9A9A9A);
-        n.setTextSize(12);
-        r.addView(n);
-        SectionArrow ar = new SectionArrow(c);
-        ar.setExpanded(name.equals(openPl));
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(c, 12), dp(c, 12));
-        alp.leftMargin = dp(c, 6);
-        ar.setLayoutParams(alp);
-        r.addView(ar);
-        r.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openPl = openPl != null && openPl.equals(name) ? null : name;
-                rebuild(c, list);
-            }
-        });
-        return r;
-    }
-
-    /** প্লেলিস্টের ভেতরের ভিডিও-সারি: ট্যাপ = খোলা */
-    private static View plItemRow(final Context c, final String id, final String title) {
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(dp(c, 16), dp(c, 8), 0, dp(c, 8));
-        TextView t1 = new TextView(c);
-        t1.setText(title != null && title.length() > 0 ? title : id);
-        t1.setTextColor(0xFFDADADA);
-        t1.setTextSize(13);
-        t1.setMaxLines(2);
-        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(t1);
-        r.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                try {
-                    if (c instanceof MainActivity) {
-                        ((MainActivity) c).openVideoById(id, title);
-                    }
-                } catch (Throwable t) {
-                }
-            }
-        });
-        return r;
-    }
-
-    /** হিস্ট্রি-সারি: শুধু তথ্য (শিরোনাম [লেবেল] + ফল + তারিখ) */
-    private static View histRow(Context c, Object[] h) {
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(0, dp(c, 9), 0, dp(c, 9));
-        TextView t1 = new TextView(c);
-        String lb = (String) h[1];
-        t1.setText((String) h[0] + (lb.length() > 0 ? "  [" + lb + "]" : ""));
-        t1.setTextColor(0xFFDADADA);
-        t1.setTextSize(13);
-        t1.setMaxLines(1);
-        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(t1);
-        TextView t2 = new TextView(c);
-        String st = (String) h[2];
-        t2.setText(st + "  \u00B7  " + dateStr(((Long) h[3]).longValue()));
-        t2.setTextColor("Failed".equals(st) ? 0xFFE8635A : 0xFF8E8E93);
-        t2.setTextSize(12);
-        r.addView(t2);
-        return r;
-    }
-
-    private static View fileRow(final Context c, final Object[] d) {
+    /** নামানো ফাইলের কার্ড: থাম্বনেইল + দৈর্ঘ্য, শিরোনাম, চ্যানেল · সাইজ, মেনু। */
+    private static View fileCard(final Activity a, final Object[] d) {
         final String name = (String) d[0];
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.HORIZONTAL);
-        r.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        r.setPadding(0, dp(c, 11), 0, dp(c, 11));
-        LinearLayout txt = new LinearLayout(c);
-        txt.setOrientation(LinearLayout.VERTICAL);
-        TextView t1 = new TextView(c);
-        t1.setText(name);
-        t1.setTextColor(0xFFF2F2F2);
+        final long size = ((Long) d[1]).longValue();
+        final Uri uri = (Uri) d[3];
+        final boolean audio = isAudio(name);
+
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(a, 10), 0, dp(a, 10));
+
+        // -- থাম্বনেইল (16:9) + দৈর্ঘ্য-ব্যাজ --
+        FrameLayout th = new FrameLayout(a);
+        th.setLayoutParams(new LinearLayout.LayoutParams(dp(a, TH_W), dp(a, TH_H)));
+
+        final ImageView iv = new ImageView(a);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setBackground(roundRect(0xFF26262A, 4));
+        iv.setClipToOutline(true);
+        iv.setImageDrawable(placeholder(a, audio));
+        th.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+
+        final TextView dur = new TextView(a);
+        dur.setText("");
+        dur.setTextSize(10);
+        dur.setTextColor(0xFFF2F2F5);
+        dur.setBackground(roundRect(0xCC000000, 2));
+        dur.setPadding(dp(a, 4), dp(a, 1), dp(a, 4), dp(a, 1));
+        dur.setVisibility(View.GONE);
+        FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(-2, -2,
+                Gravity.BOTTOM | Gravity.END);
+        dlp.setMargins(0, 0, dp(a, 4), dp(a, 4));
+        th.addView(dur, dlp);
+        row.addView(th);
+
+        // -- টেক্সট-কলাম --
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, -2, 1f);
+        clp.leftMargin = dp(a, 12);
+        col.setLayoutParams(clp);
+
+        TextView t1 = new TextView(a);
+        t1.setText(prettyName(name));
+        t1.setTextColor(0xFFF2F2F5);
         t1.setTextSize(14);
         t1.setMaxLines(2);
         t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        txt.addView(t1);
-        TextView t2 = new TextView(c);
-        t2.setText(sizeStr((Long) d[1]) + "  \u00B7  " + dateStr((Long) d[2]));
+        col.addView(t1);
+
+        JSONObject m = DlMeta.get(a, name);
+        String ch = m != null ? m.optString("c", "") : "";
+        String q = m != null ? m.optString("q", "") : "";
+        String sub = sizeStr(size);
+        if (q.length() > 0 && !name.contains("[" + q + "]")) {
+            sub = sub + "  ·  " + q;
+        }
+        if (ch.length() > 0) {
+            sub = ch + "  ·  " + sub;
+        }
+
+        LinearLayout subRow = new LinearLayout(a);
+        subRow.setOrientation(LinearLayout.HORIZONTAL);
+        subRow.setGravity(Gravity.CENTER_VERTICAL);
+        CheckIcon ck = new CheckIcon(a);
+        subRow.addView(ck, new LinearLayout.LayoutParams(dp(a, 13), dp(a, 13)));
+        TextView t2 = new TextView(a);
+        t2.setText(sub);
         t2.setTextColor(0xFF9A9A9A);
         t2.setTextSize(12);
-        txt.addView(t2);
-        r.addView(txt, new LinearLayout.LayoutParams(0, -2, 1f));
-        Button del = new Button(c);
-        del.setText("Delete");
-        del.setTextSize(11);
-        del.setTextColor(0xFFE8635A);
-        del.setBackgroundColor(0xFF242424);
-        del.setPadding(dp(c, 10), dp(c, 2), dp(c, 10), dp(c, 2));
-        del.setOnClickListener(new View.OnClickListener() {
+        t2.setMaxLines(1);
+        t2.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams t2lp = new LinearLayout.LayoutParams(0, -2, 1f);
+        t2lp.leftMargin = dp(a, 4);
+        subRow.addView(t2, t2lp);
+        LinearLayout.LayoutParams srlp = new LinearLayout.LayoutParams(-1, -2);
+        srlp.topMargin = dp(a, 3);
+        col.addView(subRow, srlp);
+        row.addView(col);
+
+        // -- তিন-বিন্দু মেনু --
+        final View dots = new DotsIcon(a);
+        LinearLayout.LayoutParams dlp2 = new LinearLayout.LayoutParams(dp(a, 22), dp(a, 30));
+        dlp2.leftMargin = dp(a, 2);
+        dots.setLayoutParams(dlp2);
+        dots.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                showMenu(a, v, name, uri);
+            }
+        });
+        row.addView(dots);
+
+        // -- থাম্বনেইল + দৈর্ঘ্য আনা (ব্যাকগ্রাউন্ড) --
+        DlThumb.load(a, name, uri, audio, new DlThumb.Callback() {
+            @Override
+            public void onInfo(DlThumb.Info info) {
                 try {
-                    new android.app.AlertDialog.Builder(c)
-                            .setTitle("Delete file")
-                            .setMessage(name)
-                            .setPositiveButton("Delete",
-                                    new DialogInterface.OnClickListener() {
-                                        @Override
-                                        public void onClick(DialogInterface d2, int w2) {
-                                            boolean ok = MainActivity.deleteDownloaded(
-                                                    c, (android.net.Uri) d[3], name);
-                                            android.widget.Toast.makeText(c, ok
-                                                    ? "Deleted" : "Could not delete",
-                                                    android.widget.Toast.LENGTH_SHORT).show();
-                                        }
-                                    })
-                            .setNegativeButton("Cancel", null)
-                            .show();
+                    if (info.bmp != null) {
+                        iv.setImageBitmap(info.bmp);
+                    }
+                    if (info.durMs > 0) {
+                        dur.setText(fmtDur(info.durMs / 1000L));
+                        dur.setVisibility(View.VISIBLE);
+                    }
                 } catch (Throwable t) {
                 }
             }
         });
-        r.addView(del);
-        r.setOnClickListener(new View.OnClickListener() {
+
+        row.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                MainActivity.openDownloaded(c, (android.net.Uri) d[3], name);
+                MainActivity.openDownloaded(a, uri, name);
             }
         });
-        r.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                try {
-                    android.content.Intent sh = new android.content.Intent(
-                            android.content.Intent.ACTION_SEND);
-                    String mime = name.endsWith(".mp3") ? "audio/mpeg"
-                            : name.endsWith(".srt") ? "text/plain"
-                            : name.endsWith(".m4a") ? "audio/mp4" : "video/mp4";
-                    sh.setType(mime);
-                    sh.putExtra(android.content.Intent.EXTRA_STREAM, (android.net.Uri) d[3]);
-                    sh.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                    c.startActivity(android.content.Intent.createChooser(sh, name));
-                } catch (Throwable t) {
+        return row;
+    }
+
+    /** চলমান জবের কার্ড: লাইভ প্রগ্রেস + Pause/Resume/Retry/Cancel। */
+    private static View jobCard(final Activity a, final DownloadService.Snap s) {
+        final boolean audio = s.mp3 > 0 || (s.v == null && s.a != null);
+
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(a, 10), 0, dp(a, 10));
+
+        // -- থাম্বনেইল-জায়গা (চলমান জবে ফাইল নেই তখনো) --
+        FrameLayout th = new FrameLayout(a);
+        th.setLayoutParams(new LinearLayout.LayoutParams(dp(a, JOB_W), dp(a, JOB_H)));
+        final ImageView iv = new ImageView(a);
+        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        iv.setBackground(roundRect(0xFF26262A, 4));
+        iv.setClipToOutline(true);
+        th.addView(iv, new FrameLayout.LayoutParams(-1, -1));
+        if (s.vid != null && s.vid.length() == 11) {
+            YtThumb.load(a, s.vid, iv);
+        } else {
+            iv.setImageDrawable(placeholder(a, audio));
+        }
+
+        if (!s.done) {
+            // থাম্বনেইলের ওপর পাজ-চিহ্ন (চলমান অবস্থায়)
+            final TextView ov = new TextView(a);
+            ov.setText(s.paused ? "II" : "");
+            ov.setTextColor(0xFFF2F2F5);
+            ov.setTextSize(11);
+            ov.setTypeface(null, 1);
+            ov.setGravity(Gravity.CENTER);
+            ov.setBackground(roundRect(0x99000000, 11));
+            th.addView(ov, new FrameLayout.LayoutParams(dp(a, 22), dp(a, 22), Gravity.CENTER));
+            final TextView ov2 = ov;
+            TICKERS.add(new Runnable() {
+                @Override
+                public void run() {
+                    ov2.setText(s.paused ? "II" : "");
                 }
-                return true;
-            }
-        });
-        return r;
-    }
-
-    private static String sizeStr(long bytes) {
-        if (bytes >= 1048576L) {
-            return String.format(java.util.Locale.US, "%.1f MB", bytes / 1048576.0);
+            });
         }
-        if (bytes >= 1024L) {
-            return (bytes / 1024L) + " KB";
-        }
-        return bytes + " B";
-    }
+        row.addView(th);
 
-    private static String dateStr(long millis) {
+        // -- টেক্সট-কলাম --
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, -2, 1f);
+        clp.leftMargin = dp(a, 12);
+        col.setLayoutParams(clp);
+
+        TextView t1 = new TextView(a);
+        String nm = s.title != null ? s.title : "Download";
+        if (s.label != null && s.label.length() > 0 && !nm.contains("[" + s.label + "]")) {
+            nm = nm + "  [" + s.label + "]";
+        }
+        t1.setText(nm);
+        t1.setTextColor(0xFFF2F2F5);
+        t1.setTextSize(14);
+        t1.setMaxLines(1);
+        t1.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(t1);
+
+        final TextView status = new TextView(a);
+        status.setTextSize(12);
+        status.setTextColor(0xFF9A9A9A);
+        status.setMaxLines(1);
+        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(status);
+
+        final ProgressBar pb = new ProgressBar(a, null,
+                android.R.attr.progressBarStyleHorizontal);
+        pb.setMax(100);
         try {
-            return new java.text.SimpleDateFormat("MMM d", java.util.Locale.US)
-                    .format(new java.util.Date(millis));
+            pb.setProgressBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(0xFF242427));
         } catch (Throwable t) {
-            return "";
         }
-    }
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(-1, dp(a, 4));
+        plp.topMargin = dp(a, 6);
+        col.addView(pb, plp);
 
-    private static View row(final Context c, final DownloadService.Snap s) {
-        LinearLayout r = new LinearLayout(c);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(0, dp(c, 12), 0, dp(c, 12));
-
-        LinearLayout top = new LinearLayout(c);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        TextView t = new TextView(c);
-        String name = (s.title != null ? s.title : "Download")
-                + (s.label != null && s.label.length() > 0 ? "  [" + s.label + "]" : "");
-        t.setText(name);
-        t.setTextColor(0xFFF2F2F2);
-        t.setTextSize(14);
-        t.setMaxLines(1);
-        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        top.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+        // -- নিয়ন্ত্রণ-বোতাম --
+        LinearLayout ctl = new LinearLayout(a);
+        ctl.setOrientation(LinearLayout.HORIZONTAL);
+        ctl.setGravity(Gravity.CENTER_VERTICAL);
         if (!s.done) {
             if (s.phase != 3) {
-                Button pp = new Button(c);
-                pp.setText(s.paused ? "Resume" : "Pause");
-                pp.setTextSize(11);
-                pp.setTextColor(0xFFF2F2F2);
-                pp.setBackgroundColor(0xFF242424);
-                pp.setPadding(dp(c, 10), dp(c, 2), dp(c, 10), dp(c, 2));
+                final Button2 pp = new Button2(a, "Pause");
                 pp.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
                         try {
-                            c.startService(new Intent(c, DownloadService.class)
+                            a.startService(new Intent(a, DownloadService.class)
                                     .setAction(s.paused ? DownloadService.ACT_RESUME
                                             : DownloadService.ACT_PAUSE)
                                     .putExtra(DownloadService.EXTRA_JID, s.slot));
-                        } catch (Throwable t2) {
+                        } catch (Throwable t) {
                         }
                     }
                 });
-                top.addView(pp);
+                ctl.addView(pp);
+                TICKERS.add(new Runnable() {
+                    @Override
+                    public void run() {
+                        pp.setText(s.paused ? "Resume" : "Pause");
+                    }
+                });
             }
-            Button cancel = new Button(c);
-            cancel.setText("Cancel");
-            cancel.setTextSize(11);
+            Button2 cancel = new Button2(a, "Cancel");
             cancel.setTextColor(0xFF9A9A9A);
-            cancel.setBackgroundColor(0xFF242424);
-            cancel.setPadding(dp(c, 10), dp(c, 2), dp(c, 10), dp(c, 2));
             cancel.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     try {
-                        c.startService(new Intent(c, DownloadService.class)
+                        a.startService(new Intent(a, DownloadService.class)
                                 .setAction(DownloadService.ACT_CANCEL)
                                 .putExtra(DownloadService.EXTRA_JID, s.slot));
-                    } catch (Throwable t2) {
+                    } catch (Throwable t) {
                     }
                 }
             });
-            top.addView(cancel);
+            ctl.addView(cancel);
         } else if (s.failed) {
-            Button rt = new Button(c);
-            rt.setText("Retry");
-            rt.setTextSize(11);
+            Button2 rt = new Button2(a, "Retry");
             rt.setTextColor(0xFF34D399);
-            rt.setBackgroundColor(0xFF242424);
-            rt.setPadding(dp(c, 10), dp(c, 2), dp(c, 10), dp(c, 2));
             rt.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     try {
-                        Intent ri = new Intent(c, DownloadService.class)
+                        Intent ri = new Intent(a, DownloadService.class)
                                 .setAction(DownloadService.ACT_START)
                                 .putExtra(DownloadService.EXTRA_TITLE, s.title)
-                                .putExtra(DownloadService.EXTRA_LABEL, s.label);
+                                .putExtra(DownloadService.EXTRA_LABEL, s.label)
+                                .putExtra(DownloadService.EXTRA_VID, s.vid)
+                                .putExtra(DownloadService.EXTRA_CH, s.ch);
                         if (s.v != null) {
                             ri.putExtra(DownloadService.EXTRA_V, s.v);
                         }
@@ -552,63 +459,345 @@ public final class DownloadsSheet {
                         if (s.mp3 > 0) {
                             ri.putExtra(DownloadService.EXTRA_MP3, s.mp3);
                         }
-                        c.startService(ri);
-                    } catch (Throwable t2) {
+                        a.startService(ri);
+                    } catch (Throwable t) {
                     }
                 }
             });
-            top.addView(rt);
+            ctl.addView(rt);
         }
-        r.addView(top);
+        row.addView(ctl);
 
-        TextView status = new TextView(c);
-        status.setTextSize(12);
-        int tint = 0xFF34D399;
-        if (s.done) {
-            status.setText(s.msg != null ? s.msg : "");
-            status.setTextColor(s.failed ? 0xFFE8635A : 0xFF34D399);
-        } else {
-            status.setTextColor(0xFF9A9A9A);
-            status.setText(statusText(s));
+        final DownloadService.Snap sf = s;
+        TICKERS.add(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    int tint = 0xFF34D399;
+                    if (sf.done) {
+                        status.setText(sf.msg != null ? sf.msg : "");
+                        status.setTextColor(sf.failed ? 0xFFE8635A : 0xFF34D399);
+                        pb.setProgress(100);
+                    } else {
+                        status.setTextColor(0xFF9A9A9A);
+                        status.setText(statusText(sf));
+                        pb.setProgress(progressOf(sf));
+                    }
+                    pb.setProgressTintList(android.content.res.ColorStateList.valueOf(
+                            sf.done && sf.failed ? 0xFFE8635A : tint));
+                } catch (Throwable t) {
+                }
+            }
+        });
+        TICKERS.get(TICKERS.size() - 1).run();
+
+        return row;
+    }
+
+    // ------------------------------------------------------------------
+    // সহায়ক ভিউ
+    // ------------------------------------------------------------------
+
+    /** তিন-বিন্দু (ওভারফ্লো) আইকন — কোনো ইমোজি নয়, নিজে আঁকা। */
+    private static final class DotsIcon extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        DotsIcon(Context c) {
+            super(c);
+            p.setColor(0xFF9A9A9A);
+            p.setStyle(Paint.Style.FILL);
         }
-        status.setMaxLines(2);
-        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(status);
 
-        ProgressBar pb = new ProgressBar(c, null,
-                android.R.attr.progressBarStyleHorizontal);
-        pb.setMax(100);
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            float cx = w / 2f;
+            float r = Math.min(w, h) / 9f;
+            float cy = h / 2f;
+            cv.drawCircle(cx, cy - r * 3.1f, r, p);
+            cv.drawCircle(cx, cy, r, p);
+            cv.drawCircle(cx, cy + r * 3.1f, r, p);
+        }
+    }
+
+    /** "নামানো হয়েছে" টিক-চিহ্ন। */
+    private static final class CheckIcon extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        CheckIcon(Context c) {
+            super(c);
+            p.setColor(0xFF34D399);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1.5f,
+                    1.6f * c.getResources().getDisplayMetrics().density));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            android.graphics.Path pa = new android.graphics.Path();
+            pa.moveTo(w * 0.18f, h * 0.55f);
+            pa.lineTo(w * 0.42f, h * 0.80f);
+            pa.lineTo(w * 0.86f, h * 0.26f);
+            cv.drawPath(pa, p);
+        }
+    }
+
+    /** ছোট গোলাকার বোতাম (Pause/Cancel/Retry)। */
+    private static final class Button2 extends android.widget.Button {
+        Button2(Context c, String text) {
+            super(c);
+            setText(text);
+            setTextSize(11);
+            setTextColor(0xFFF2F2F5);
+            setAllCaps(false);
+            setBackground(roundRect(0xFF242424, 3));
+            setPadding(dp(c, 12), dp(c, 5), dp(c, 12), dp(c, 5));
+            LinearLayout.LayoutParams lp =
+                    new LinearLayout.LayoutParams(-2, -2);
+            lp.leftMargin = dp(c, 6);
+            setLayoutParams(lp);
+        }
+    }
+
+    private static View sectionLabel(Context c, String text) {
+        TextView t = new TextView(c);
+        t.setText(text);
+        t.setTextColor(0xFF8E8E96);
+        t.setTextSize(11);
+        t.setTypeface(null, 1);
+        t.setLetterSpacing(0.08f);
+        t.setPadding(0, dp(c, 14), 0, dp(c, 6));
+        return t;
+    }
+
+    private static View hair(Context c) {
+        View v = new View(c);
+        v.setBackgroundColor(0xFF1C1C1F);
+        v.setLayoutParams(new LinearLayout.LayoutParams(-1, Math.max(1, dp(c, 1))));
+        return v;
+    }
+
+    private static View emptyState(Context c) {
+        LinearLayout b = new LinearLayout(c);
+        b.setOrientation(LinearLayout.VERTICAL);
+        b.setGravity(Gravity.CENTER_HORIZONTAL);
+        b.setPadding(0, dp(c, 64), 0, 0);
+
+        View icon = new DlGlyph(c);
+        LinearLayout.LayoutParams ilp =
+                new LinearLayout.LayoutParams(dp(c, 56), dp(c, 56));
+        ilp.bottomMargin = dp(c, 18);
+        b.addView(icon, ilp);
+
+        TextView t1 = new TextView(c);
+        t1.setText("No downloads yet");
+        t1.setTextColor(0xFFF2F2F5);
+        t1.setTextSize(16);
+        t1.setTypeface(null, 1);
+        b.addView(t1);
+
+        TextView t2 = new TextView(c);
+        t2.setText("Videos you save will show up here,\nready to play with no network.");
+        t2.setTextColor(0xFF6F6F75);
+        t2.setTextSize(12);
+        t2.setGravity(Gravity.CENTER_HORIZONTAL);
+        t2.setPadding(0, dp(c, 8), 0, 0);
+        b.addView(t2);
+        return b;
+    }
+
+    /** এম্পটি-স্টেটের ডাউনলোড-আইকন (নিচের দিকে তীর)। */
+    private static final class DlGlyph extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        DlGlyph(Context c) {
+            super(c);
+            p.setColor(0xFF2A2A32);
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float w = getWidth();
+            float h = getHeight();
+            p.setStyle(Paint.Style.FILL);
+            // তীরের মাথা
+            android.graphics.Path pa = new android.graphics.Path();
+            pa.moveTo(w * 0.5f, h * 0.95f);
+            pa.lineTo(w * 0.16f, h * 0.52f);
+            pa.lineTo(w * 0.36f, h * 0.52f);
+            pa.lineTo(w * 0.36f, h * 0.14f);
+            pa.lineTo(w * 0.64f, h * 0.14f);
+            pa.lineTo(w * 0.64f, h * 0.52f);
+            pa.lineTo(w * 0.84f, h * 0.52f);
+            pa.close();
+            cv.drawPath(pa, p);
+            // নিচের রেখা
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(2f, h * 0.055f));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            cv.drawLine(w * 0.16f, h * 0.99f, w * 0.84f, h * 0.99f, p);
+        }
+    }
+
+    private static android.graphics.drawable.Drawable placeholder(Context c, boolean audio) {
+        GradientDrawable g = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                audio ? new int[]{0xFF2A2A32, 0xFF15151A}
+                      : new int[]{0xFF34343D, 0xFF1A1A20});
+        g.setCornerRadius(dp(c, 4));
+        return g;
+    }
+
+    private static GradientDrawable roundRect(int color, int radiusDp) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(radiusDp * 3f);
+        return g;
+    }
+
+    // ------------------------------------------------------------------
+    // মেনু / ফরম্যাট
+    // ------------------------------------------------------------------
+
+    private static void showMenu(final Activity a, View anchor, final String name,
+            final Uri uri) {
         try {
-            pb.setProgressTintList(android.content.res.ColorStateList.valueOf(
-                    s.done && s.failed ? 0xFFE8635A : 0xFF34D399));
-            pb.setProgressBackgroundTintList(
-                    android.content.res.ColorStateList.valueOf(0xFF242427));
-        } catch (Throwable t2) {
+            PopupMenu pm = new PopupMenu(a, anchor);
+            pm.getMenu().add(0, 1, 0, "Play");
+            pm.getMenu().add(0, 2, 1, "Share");
+            pm.getMenu().add(0, 3, 2, "Delete");
+            pm.setOnMenuItemClickListener(
+                    new PopupMenu.OnMenuItemClickListener() {
+                        @Override
+                        public boolean onMenuItemClick(android.view.MenuItem item) {
+                            int id = item.getItemId();
+                            if (id == 1) {
+                                MainActivity.openDownloaded(a, uri, name);
+                            } else if (id == 2) {
+                                share(a, uri, name);
+                            } else if (id == 3) {
+                                confirmDelete(a, uri, name);
+                            }
+                            return true;
+                        }
+                    });
+            pm.show();
+        } catch (Throwable t) {
+            // PopupMenu নাও চলতে পারে — তখন ডিলিট-কনফার্ম দেখানোই যথেষ্ট
+            confirmDelete(a, uri, name);
         }
-        if (s.done) {
-            pb.setProgress(s.failed ? 100 : 100);
-        } else if (s.phase == 3) {
-            pb.setProgress(0);
-        } else if (s.phase == 1) {
-            int pct = s.muxTotal > 0 ? (int) Math.min(99,
-                    95 + 5 * s.muxWritten / s.muxTotal) : 96;
-            pb.setProgress(pct);
-        } else if (s.phase == 2) {
-            pb.setProgress(97);
-            pb.setIndeterminate(true);
-        } else {
-            pb.setProgress(s.total > 0
-                    ? (int) Math.min(95, 95 * s.got / s.total) : 0);
+    }
+
+    private static void share(Context c, Uri uri, String name) {
+        try {
+            Intent sh = new Intent(Intent.ACTION_SEND);
+            sh.setType(mimeOf(name));
+            sh.putExtra(Intent.EXTRA_STREAM, uri);
+            sh.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            c.startActivity(Intent.createChooser(sh, name));
+        } catch (Throwable t) {
         }
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(-1, dp(c, 6));
-        plp.topMargin = dp(c, 8);
-        pb.setLayoutParams(plp);
-        r.addView(pb);
-        return r;
+    }
+
+    private static void confirmDelete(final Context c, final Uri uri, final String name) {
+        try {
+            new android.app.AlertDialog.Builder(c)
+                    .setTitle("Delete download")
+                    .setMessage(name)
+                    .setPositiveButton("Delete",
+                            new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface d2, int w2) {
+                                    boolean ok = MainActivity.deleteDownloaded(c, uri, name);
+                                    if (ok) {
+                                        DlMeta.drop(c, name);
+                                    }
+                                    android.widget.Toast.makeText(c,
+                                            ok ? "Deleted" : "Could not delete",
+                                            android.widget.Toast.LENGTH_SHORT).show();
+                                    sig = null; // পরের টিক-এ লিস্ট রিবিল্ড হবে
+                                }
+                            })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        } catch (Throwable t) {
+        }
+    }
+
+    private static String mimeOf(String name) {
+        String n = name.toLowerCase(java.util.Locale.US);
+        if (n.endsWith(".mp3")) {
+            return "audio/mpeg";
+        }
+        if (n.endsWith(".srt")) {
+            return "text/plain";
+        }
+        if (n.endsWith(".m4a")) {
+            return "audio/mp4";
+        }
+        return "video/mp4";
+    }
+
+    private static boolean isAudio(String name) {
+        String n = name.toLowerCase(java.util.Locale.US);
+        return n.endsWith(".mp3") || n.endsWith(".m4a");
+    }
+
+    /** "Title [720p].mp4" → "Title [720p]" (এক্সটেনশন লুকানো)। */
+    private static String prettyName(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) {
+            return name.substring(0, dot);
+        }
+        return name;
+    }
+
+    private static String storageLine(long used) {
+        try {
+            java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS);
+            long free = dir != null ? dir.getUsableSpace() : -1L;
+            if (free > 0) {
+                return sizeStr(used) + " used  ·  " + sizeStr(free) + " free";
+            }
+        } catch (Throwable t) {
+        }
+        return sizeStr(used) + " used";
+    }
+
+    private static String sizeStr(long bytes) {
+        if (bytes >= 1073741824L) {
+            return String.format(java.util.Locale.US, "%.1f GB", bytes / 1073741824.0);
+        }
+        if (bytes >= 1048576L) {
+            return String.format(java.util.Locale.US, "%.1f MB", bytes / 1048576.0);
+        }
+        if (bytes >= 1024L) {
+            return (bytes / 1024L) + " KB";
+        }
+        return bytes + " B";
+    }
+
+    private static String fmtDur(long sec) {
+        long h = sec / 3600L;
+        long m = (sec % 3600L) / 60L;
+        long s = sec % 60L;
+        if (h > 0) {
+            return String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s);
+        }
+        return String.format(java.util.Locale.US, "%d:%02d", m, s);
     }
 
     private static String statusText(DownloadService.Snap s) {
-        if (s.paused && !s.done && s.phase == 0) {
+        if (s.done) {
+            return s.msg != null ? s.msg : "";
+        }
+        if (s.paused && s.phase == 0) {
             return "Paused";
         }
         if (s.phase == 3) {
@@ -620,16 +809,33 @@ public final class DownloadsSheet {
         if (s.phase == 2) {
             return "Converting to MP3";
         }
-        long got = s.got;
         double sec = Math.max(0.001, (System.currentTimeMillis() - s.t0) / 1000.0);
-        double mbs = s.speed > 0 ? s.speed : got / 1048576.0 / sec;
+        double mbs = s.speed > 0 ? s.speed : s.got / 1048576.0 / sec;
         if (s.total > 0) {
-            int pct = (int) Math.min(95, 95 * got / s.total);
-            return String.format(java.util.Locale.US, "%d%%  ·  %.1f MB/s  ·  %.1f of %.1f MB",
-                    pct, mbs, got / 1048576.0, s.total / 1048576.0);
+            int pct = (int) Math.min(95, 95 * s.got / s.total);
+            return String.format(java.util.Locale.US,
+                    "%d%%  ·  %.1f MB/s  ·  %.1f of %.1f MB",
+                    pct, mbs, s.got / 1048576.0, s.total / 1048576.0);
         }
         return String.format(java.util.Locale.US, "%.1f MB  ·  %.1f MB/s",
-                got / 1048576.0, mbs);
+                s.got / 1048576.0, mbs);
+    }
+
+    private static int progressOf(DownloadService.Snap s) {
+        if (s.done) {
+            return 100;
+        }
+        if (s.phase == 3) {
+            return 0;
+        }
+        if (s.phase == 1) {
+            return s.muxTotal > 0
+                    ? (int) Math.min(99, 95 + 5 * s.muxWritten / s.muxTotal) : 96;
+        }
+        if (s.phase == 2) {
+            return 97;
+        }
+        return s.total > 0 ? (int) Math.min(95, 95 * s.got / s.total) : 0;
     }
 
     private static int dp(Context c, int v) {

@@ -2764,6 +2764,8 @@ public class PlayerActivity extends Activity {
         startService(new Intent(this, DownloadService.class)
                 .setAction(DownloadService.ACT_START)
                 .putExtra(DownloadService.EXTRA_TITLE, pendingTitle)
+                .putExtra(DownloadService.EXTRA_VID, videoId)
+                .putExtra(DownloadService.EXTRA_CH, lastChName)
                 .putExtra(DownloadService.EXTRA_V, pick.url)
                 .putExtra(DownloadService.EXTRA_A, ytAudio)
                 .putExtra(DownloadService.EXTRA_LABEL, pick.h + "p"));
@@ -3139,6 +3141,8 @@ public class PlayerActivity extends Activity {
         startService(new Intent(this, DownloadService.class)
                 .setAction(DownloadService.ACT_START)
                 .putExtra(DownloadService.EXTRA_TITLE, pendingTitle)
+                .putExtra(DownloadService.EXTRA_VID, videoId)
+                .putExtra(DownloadService.EXTRA_CH, lastChName)
                 .putExtra(DownloadService.EXTRA_V, v.url)
                 .putExtra(DownloadService.EXTRA_A, ytAudio)
                 .putExtra(DownloadService.EXTRA_LABEL, v.h + "p"));
@@ -3153,6 +3157,8 @@ public class PlayerActivity extends Activity {
         startService(new Intent(this, DownloadService.class)
                 .setAction(DownloadService.ACT_START)
                 .putExtra(DownloadService.EXTRA_TITLE, pendingTitle)
+                .putExtra(DownloadService.EXTRA_VID, videoId)
+                .putExtra(DownloadService.EXTRA_CH, lastChName)
                 .putExtra(DownloadService.EXTRA_A, ytAudio)
                 .putExtra(DownloadService.EXTRA_MP3, kbps)
                 .putExtra(DownloadService.EXTRA_LABEL, kbps + "kbps"));
@@ -3163,6 +3169,8 @@ public class PlayerActivity extends Activity {
         startService(new Intent(this, DownloadService.class)
                 .setAction(DownloadService.ACT_START)
                 .putExtra(DownloadService.EXTRA_TITLE, pendingTitle)
+                .putExtra(DownloadService.EXTRA_VID, videoId)
+                .putExtra(DownloadService.EXTRA_CH, lastChName)
                 .putExtra(DownloadService.EXTRA_SRT, cap.url)
                 .putExtra(DownloadService.EXTRA_LABEL,
                         (cap.lang != null && cap.lang.length() > 0 ? cap.lang : "subtitle")));
