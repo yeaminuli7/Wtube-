@@ -194,6 +194,19 @@ public class PlayerActivity extends Activity {
     private TextView btnSpeed;
     private IconButton btnLoop;
     private float curSpeed = 1f;
+    /**
+     * চেপে-ধরে-রাখা (press & hold) চলছে কি না। চলাকালীন ভিডিও 2x গতিতে
+     * চলে, আর ছেড়ে দিলে {@link #curSpeed}-এ ফেরত যায়।
+     */
+    private boolean holdBoost = false;
+    /** HUD স্থায়ীভাবে দেখানোর জন্য (hold boost চলাকালীন)। */
+    private boolean hudPinned = false;
+    /**
+     * এই স্পর্শে একাধিক আঙুল ছিল কি না। পিঞ্চের সময় আমরা gd-কে ইভেন্ট
+     * দিই না, তাই gd-এর নিজের long-press টাইমার বাতিল হয় না — নিজেই
+     * মনে রাখি, নাহলে দুই আঙুল স্থির রেখে ৫০০ms থাকলেই 2x হয়ে যেত।
+     */
+    private boolean multiTouch = false;
     private boolean loopOn = false;
     private final java.util.List<Resolver.Rel> relList =
             new java.util.ArrayList<>();
@@ -886,6 +899,8 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        // hold boost চলাকালীন স্ক্রিন ছাড়লে 2x-এ আটকে যাওয়া যাবে না
+        endHoldBoost();
         super.onPause();
     }
 
@@ -1252,6 +1267,17 @@ public class PlayerActivity extends Activity {
             }
 
             @Override
+            public void onLongPress(MotionEvent e) {
+                // দুই আঙুল (পিঞ্চ) চললে দীর্ঘ-চাপ নয় — নাহলে জুম শুরু করতে
+                // গিয়ে ভিডিও 2x হয়ে যাবে
+                if (e == null || multiTouch || e.getPointerCount() > 1
+                        || (sgd != null && sgd.isInProgress())) {
+                    return;
+                }
+                beginHoldBoost();
+            }
+
+            @Override
             public boolean onDoubleTap(MotionEvent e) {
                 if (player == null || isInPictureInPictureMode()) {
                     return true;
@@ -1368,6 +1394,13 @@ public class PlayerActivity extends Activity {
         surfaceBox.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent e) {
+                if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                    multiTouch = false;
+                } else if (e.getAction() == MotionEvent.ACTION_POINTER_DOWN) {
+                    // দ্বিতীয় আঙুল = পিঞ্চ; দীর্ঘ-চাপ বাতিল, চলমান boost-ও শেষ
+                    multiTouch = true;
+                    endHoldBoost();
+                }
                 if (e.getAction() == MotionEvent.ACTION_DOWN
                         || e.getAction() == MotionEvent.ACTION_UP
                         || e.getAction() == MotionEvent.ACTION_CANCEL) {
@@ -1377,6 +1410,8 @@ public class PlayerActivity extends Activity {
                             settleVolumeGesture();
                         }
                         verticalGesture = false;
+                        // চেপে-ধরে-রাখা শেষ হলে আগের গতিতে ফেরত
+                        endHoldBoost();
                     }
                 }
                 // পিঞ্চ চলাকালে সিঙ্গেল-ট্যাপ/স্ক্রল জেসচার বন্ধ
@@ -2006,7 +2041,8 @@ public class PlayerActivity extends Activity {
     private final Runnable hideHud = new Runnable() {
         @Override
         public void run() {
-            if (gestureHud != null) {
+            // hold boost চলাকালীন HUD পিন করা থাকে — লুকায় না
+            if (gestureHud != null && !hudPinned) {
                 gestureHud.setVisibility(View.GONE);
             }
         }
@@ -2019,7 +2055,50 @@ public class PlayerActivity extends Activity {
         gestureHud.setText(t);
         gestureHud.setVisibility(View.VISIBLE);
         h.removeCallbacks(hideHud);
-        h.postDelayed(hideHud, 800);
+        if (!hudPinned) {
+            h.postDelayed(hideHud, 800);
+        }
+    }
+
+    /**
+     * চেপে ধরে রাখলে 2x গতি। শুধু তখনই যখন ভিডিও সত্যিই বাজছে —
+     * পজ করা থাকলে বা PiP-তে কিছুই করি না (কিছু বাড়তি হবে না)।
+     */
+    private void beginHoldBoost() {
+        if (holdBoost || player == null || isInPictureInPictureMode()) {
+            return;
+        }
+        if (!player.getPlayWhenReady()) {
+            return;
+        }
+        try {
+            player.setPlaybackParameters(
+                    new androidx.media3.common.PlaybackParameters(2f));
+        } catch (Throwable t) {
+            return;
+        }
+        holdBoost = true;
+        hudPinned = true;
+        showHud("2x speed — release to resume " + fmtSpeed(curSpeed));
+    }
+
+    /** আঙুল তোলা/বাতিল — আগের গতিতে ফেরত, HUD আবার স্বাভাবিক। */
+    private void endHoldBoost() {
+        if (!holdBoost) {
+            return;
+        }
+        holdBoost = false;
+        hudPinned = false;
+        try {
+            if (player != null) {
+                player.setPlaybackParameters(
+                        new androidx.media3.common.PlaybackParameters(curSpeed));
+            }
+        } catch (Throwable t) {
+        }
+        if (gestureHud != null) {
+            gestureHud.setVisibility(View.GONE);
+        }
     }
 
     private void cycleSpeed() {

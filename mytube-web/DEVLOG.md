@@ -1689,3 +1689,39 @@ v2.05–v2.11-এর সাথে মিল → ওপরে ইনস্টল 
 (২৫+২০+১৯+৭১)। APK-ভেতরের `assets/inject.js` রিপোর সাথে হুবহু এক;
 dex-এ `vidFromPastedLink`/`search_query` এবং v2.11-এর
 `applyVolume`/`setUserGain` উপস্থিত।
+
+---
+
+## v2.13 — চেপে ধরে রাখলে 2x গতি (vc 89→90)
+
+**ইউজার-নির্দেশ:** "make a option like if we press and hold on player it will
+go or play video 2x speed"।
+
+**কী হয়েছে:** প্লেয়ারে আঙুল চেপে ধরে রাখলে (≈৫০০ms) ভিডিও **2x** গতিতে চলে,
+আঙুল তুললেই আগের গতিতে ফেরত। HUD-এ "2x speed — release to resume 1x" দেখায়
+এবং boost চলাকালীন HUD **পিন** করা থাকে (স্বাভাবিক ৮০০ms ফেডের বদলে)।
+
+**বাস্তবায়ন:** `GestureDetector`-এর ডিফল্ট long-press সক্রিয় ছিল (কোথাও
+`setIsLongpressEnabled(false)` নেই — যাচাই করা), তাই `onLongPress` ওভাররাইড
+করা হয়েছে। নতুন: `beginHoldBoost()` (2x + HUD পিন), `endHoldBoost()`
+(`curSpeed`-এ ফেরত), ফিল্ড `holdBoost`/`hudPinned`/`multiTouch`, এবং
+`hideHud`/`showHud`-এ `hudPinned` চেক।
+
+**গুরুত্বপূর্ণ কেস, যা ধরা পড়েছিল বিল্ডের পরে:**
+পিঞ্চ চলাকালে আমরা `gd.onTouchEvent()` দিই না, ফলে gd-এর নিজের long-press
+টাইমার বাতিল হয় না। দুই আঙুল **স্থির** রেখে ৫০০ms থাকলেই ভিডিও 2x হয়ে যেত —
+অর্থাৎ জুম শুরু করতে গিয়ে গতি বদলে যেত। তাই `multiTouch` ফ্ল্যাগ: দ্বিতীয়
+আঙুল নামলে (`ACTION_POINTER_DOWN`) long-press বাতিল + চলমান boost শেষ।
+
+**নিরাপত্তা:**
+- পজ করা ভিডিওতে hold কিছুই করে না (`getPlayWhenReady()` চেক)।
+- PiP-তে নিষ্ক্রিয়।
+- `onPause()`-এ `endHoldBoost()` — স্ক্রিন ছেড়ে দিলে 2x-এ আটকে থাকবে না।
+
+**যাচাই:** vc 90 / name 2.13, APK 4,892,575 B, VALID, misaligned 0, সার্টিফিকেট
+v2.05–v2.12-এর সাথে মিল → ওপরে ইনস্টল হবে। dex-এ beginHoldBoost/
+endHoldBoost/hudPinned/multiTouch/onLongPress/"2x speed"/"release to resume"
+সবই উপস্থিত। `setPlaybackParameters` এখন সোর্সে ৩ জায়গায় (স্পিড-ডায়ালগ
++ boost শুরু + boost শেষ); আগের `cycleSpeed()`/স্পিড-ডায়ালগ অপরিবর্তিত।
+v2.11-এর ভলিউম ও v2.12-এর সার্চ-লিংক কোড অটুট।
+সেল্টেস্ট ১৩৫/১৩৫।
