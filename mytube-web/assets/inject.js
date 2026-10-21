@@ -119,6 +119,21 @@
   function report() {
     try { MTApp.nav(location.href); } catch (e) { }
     var href = location.href || '';
+    // ফলব্যাক: সার্চ-বারের কী-হুক কোনো কারণে ধরতে পারেনি, কিন্তু কোয়েরিটি
+    // একটি ভিডিও-লিংক — তখন ফলাফল-পেজেই ধরে নিই
+    if (href.indexOf('/results') >= 0) {
+      var mq = href.match(/[?&]search_query=([^&]*)/);
+      var q = null;
+      if (mq) {
+        try { q = decodeURIComponent(mq[1].replace(/\+/g, ' ')); } catch (e) { q = mq[1]; }
+      }
+      var qv = mtVideoLink(q);
+      if (qv) {
+        tryOpen(qv.id, qv.short);
+        setTimeout(function () { try { history.back(); } catch (e) { } }, 350);
+        return;
+      }
+    }
     var vid = vidFrom(href);
     if (!vid && href.indexOf('youtube.com') >= 0 && href.indexOf('/watch') < 0) {
       homeHref = href;
@@ -151,6 +166,87 @@
       e.stopImmediatePropagation();
       lastClickOpen = Date.now();
       tryOpen(vid, isShort(a.href || ''));
+    } catch (err) { }
+  }, true);
+
+  /* ---- সার্চ-বারে ইউটিউব-লিংক পেস্ট করলে ভিডিও খোলা ----
+     ইউটিউবের সার্চ-বারে লিংক দিয়ে এন্টার দিলে সে /results?search_query=...
+     তে যায় — ভিডিও খোলে না। তাই ইনপুটেই আটকাই: পুরো কোয়েরিটি যদি একটি
+     ভিডিও-লিংক হয়, সার্চ না করে সরাসরি ভিডিও খুলে দিই।
+     সাধারণ শব্দ দিয়ে সার্চ করলে কিছুই বদলাবে না। */
+
+  /** পুরো স্ট্রিংটি একটি ভিডিও-লিংক হলে {id, short}, নাহলে null। */
+  function mtVideoLink(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s || s.length > 300) { return null; }
+    var re = /^(?:https?:\/\/)?(?:(?:www|m)\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})(?:[?&#][\s\S]*)?$/;
+    var m = s.match(re);
+    if (!m) { return null; }
+    return { id: m[1], short: /\/shorts\//.test(s) };
+  }
+
+  /** এটি কি ইউটিউবের সার্চ-ইনপুট? (DOM বদলালেও চলবে — বৈশিষ্ট্য দিয়ে চেনা) */
+  function mtIsSearchInput(el) {
+    if (!el) { return false; }
+    var t = (el.tagName || '').toLowerCase();
+    if (t !== 'input') { return false; }
+    var ty = (el.type || 'text').toLowerCase();
+    if (ty === 'submit' || ty === 'button' || ty === 'hidden' || ty === 'checkbox') {
+      return false;
+    }
+    var n = (el.getAttribute && el.getAttribute('name')) || '';
+    if (n === 'search_query') { return true; }
+    if (n.indexOf('search') >= 0) { return true; }
+    if ((el.id || '').toLowerCase().indexOf('search') >= 0) { return true; }
+    if (el.closest) {
+      if (el.closest('ytd-searchbox') || el.closest('ytm-search-box')
+          || el.closest('#search') || el.closest('form#search-form')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function mtOpenFromSearch(id, short) {
+    try { MTApp.toast('Opening video'); } catch (e) { }
+    window.__mtpause = Date.now() + 5000;
+    try { MTApp.openVideo(id, '', !!short); } catch (e) { }
+  }
+
+  /** সত্য = আমরা নিয়েছি (সার্চ বন্ধ); মিথ্যা = স্বাভাবিক সার্চ চলুক। */
+  function mtTakeSearch(el) {
+    var v = mtVideoLink(el && el.value);
+    if (!v) { return false; }
+    try { el.value = ''; } catch (e) { }
+    try { el.blur(); } catch (e) { }
+    mtOpenFromSearch(v.id, v.short);
+    return true;
+  }
+
+  document.addEventListener('keydown', function (e) {
+    try {
+      if (!e) { return; }
+      if (e.keyCode !== 13 && e.key !== 'Enter') { return; }
+      var el = e.target;
+      if (!mtIsSearchInput(el)) { return; }
+      if (!mtTakeSearch(el)) { return; }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    } catch (err) { }
+  }, true);
+
+  document.addEventListener('submit', function (e) {
+    try {
+      var f = e.target;
+      if (!f || !f.querySelectorAll) { return; }
+      var ins = f.querySelectorAll('input');
+      for (var i = 0; i < ins.length; i++) {
+        if (!mtIsSearchInput(ins[i])) { continue; }
+        if (!mtTakeSearch(ins[i])) { continue; }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
     } catch (err) { }
   }, true);
 

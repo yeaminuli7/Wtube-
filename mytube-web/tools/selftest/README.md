@@ -41,3 +41,18 @@ npm test
   re-hidden by the MutationObserver
 - asserts the anti-flicker stylesheet exists immediately at document start and that the
   pivot-bar bottom padding is cleared
+`test4.js` — pasting a YouTube link into YouTube's own search bar
+- every link shape opens the video and blocks the search: `watch?v=`, bare
+  `youtube.com/watch?v=`, `m.youtube.com`, `youtu.be/` (with `?t=`), `shorts/`,
+  `embed/`, `live/`, links carrying `&list=` / `&feature=share`, extra spaces
+- `shorts/` links carry the shorts flag; the input is cleared after opening
+- **ordinary searches are untouched** (no video opened, not blocked, text kept):
+  plain words, a bare `youtube.com`, `watch?v=` with no host, an id embedded in
+  words, an 11-char-short id, a non-YouTube host, a `/results` URL, empty input
+- non-search inputs (a comment box) are never hijacked
+- detected by `#search` container, by `name=search_query`, and by `type=search`
+- the `submit` event is caught too, for paths that skip keydown
+- safety net: a loaded `/results?search_query=<link>` page opens the video,
+  while a normal results page is left alone
+- no regression: tapping a video link still opens the player
+

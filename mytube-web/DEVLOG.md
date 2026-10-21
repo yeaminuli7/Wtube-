@@ -1638,3 +1638,54 @@ istably increasing and decreasing make it smooth"।
 ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓, dex-এ applyVolume/settleVolumeGesture/
 setUserGain/applyGain উপস্থিত ✓, আগের জেসচার ("Volume "/"Brightness "/
 "Zoom reset"/"Fit screen") অক্ষত ✓।
+
+---
+
+## v2.12 — সার্চ-বারে ভিডিও-লিংক পেস্ট (vc 88→89)
+
+**ইউজার-নির্দেশ:** "if we paste youtube link on sarsh bar the video will show
+it's possible to do that"।
+
+হ্যাঁ, সম্ভব — এবং আগে হতো না। কারণ: ইউটিউবের সার্চ-বার তার **নিজের** —
+আমাদের WebView-এর ভেতরে, একটি সাধারণ GET ফর্ম (`/results?search_query=...`)।
+লিংক পেস্ট করে এন্টার দিলে ইউটিউব সেটিকে *সার্চ-টেক্সট* ভাবেই সার্চ করতো,
+কোনো ভিডিও খুলতো না। আর মোবাইল সাইটে সার্চ ক্লায়েন্ট-সাইড (`pushState`),
+তাই `shouldOverrideUrlLoading` পর্যন্ত পৌঁছাতো না।
+
+**তিন স্তরের সমাধান:**
+
+1. **`inject.js` — মূল হুক (keydown, capture):** সার্চ-ইনপুটে এন্টার চাপলে
+   পুরো কোয়েরিটিই একটি ভিডিও-লিংক কি না দেখা হয় (`mtVideoLink`)। হলে
+   `preventDefault` + `stopImmediatePropagation` + `MTApp.openVideo`
+   → সরাসরি আমাদের প্লেয়ার।
+   ইনপুট চেনা হয় DOM-নিরপেক্ষভাবে (`mtIsSearchInput`):
+   `name=search_query` / `id`-তে "search" / `ytd-searchbox`, `ytm-search-box`,
+   `#search`, `form#search-form` — ইউটিউব DOM বদলালেও টিকবে।
+   `submit` ইভেন্টও আটকানো হয় (keydown বাদ পড়া পথগুলোর জন্য)।
+
+2. **`inject.js` — `report()` ফলব্যাক:** কী-হুক মিস করলেও, লোড হওয়া
+   `/results?search_query=<লিংক>` পেজে কোয়েরি ভিডিও-লিংক হলে ভিডিও খোলে
+   এবং ৩৫০ms পরে `history.back()`।
+
+3. **`MainActivity.vidFromPastedLink()` — জাভা নেট:** ফর্ম-সাবমিট আসলে
+   সত্যিকারের নেভিগেশন, তাই `shouldOverrideUrlLoading`-এ `/results` +
+   `search_query` যদি সম্পূর্ণ ভিডিও-লিংক হয় → `routeVideo` করে `true`
+   ফেরত (পেজ লোডই হতে দিই না)। দ্বি-এনকোডেড কোয়েরি, স্কিম-হীন লিংক,
+   `shorts/`+`embed/`+`live/`+`v/` সবই সামলানো হয়।
+   (`vidFromUrl` অপরিবর্তিত — তাই ক্লিক-ইন্টারসেপ্টের আগের আচরণ অটুট।)
+
+**যা বদলায় না:** সাধারণ শব্দ-সার্চ, কমেন্ট-বক্স, বা অন্য ইনপুট — কিছুই।
+লিংকের আকার: `watch?v=`, `youtu.be/` (`?t=` সহ), `shorts/`, `embed/`,
+`live/`, `&list=`/`&feature=share` সহ, স্কিম ছাড়া, চারপাশে স্পেস — সব চলে।
+
+**নতুন টেস্ট `tools/selftest/test4.js` — ৭১টি অ্যাসার্ট:**
+১১টি লিংক-আকৃতি খোলা+ব্লক, shorts ফ্ল্যাগ, ইনপুট ক্লিয়ার, ১০টি সাধারণ
+সার্চ অক্ষত (না খোলে/না ব্লক হয়/টেক্সট থাকে), কমেন্ট-বক্স, তিন ধরনের
+ডিটেকশন, form-submit, `/results` ফলব্যাক (লিংক = খোলে, শব্দ = না),
+এবং ক্লিক-ইন্টারসেপ্ট রিগ্রেশন। `package.json`-এ `npm test`-এ যোগ করা হয়েছে।
+
+**যাচাই:** vc 89 / name 2.12, APK 4,892,575 B, VALID, misaligned 0, সার্টিফিকেট
+v2.05–v2.11-এর সাথে মিল → ওপরে ইনস্টল হবে। সেল্টেস্ট **১৩৫/১৩৫**
+(২৫+২০+১৯+৭১)। APK-ভেতরের `assets/inject.js` রিপোর সাথে হুবহু এক;
+dex-এ `vidFromPastedLink`/`search_query` এবং v2.11-এর
+`applyVolume`/`setUserGain` উপস্থিত।

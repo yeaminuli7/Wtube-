@@ -49,6 +49,7 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
+| [v2.12](https://github.com/yeaminuli7/vr/releases/tag/v2.12) | 2.12 (vc 89) | Paste a YouTube link into YouTube's search bar and the video opens instead of searching. Ordinary searches unaffected |
 | [v2.11](https://github.com/yeaminuli7/vr/releases/tag/v2.11) | 2.11 (vc 88) | Smooth volume gesture: the drag now accumulates instead of discarding fractions, and fills between the system's integer steps with player gain |
 | [v2.10](https://github.com/yeaminuli7/vr/releases/tag/v2.10) | 2.10 (vc 87) | Pinch to zoom the video (100-500%), drag to pan while zoomed, double-tap to reset. Existing gestures unchanged |
 | [v2.09](https://github.com/yeaminuli7/vr/releases/tag/v2.09) | 2.09 (vc 86) | History rebuilt YouTube-style: day sections with thumbnail cards; "Open in web" removed from the offline dialog |

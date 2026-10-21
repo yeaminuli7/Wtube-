@@ -301,6 +301,11 @@ public class MainActivity extends Activity {
                         String host = u.getHost() == null ? "" : u.getHost();
                         if (host.endsWith("youtube.com") || host.equals("youtu.be")) {
                             String vid = vidFromUrl(u);
+                            if (vid == null) {
+                                // সার্চ-বারে লিংক পেস্ট করা হয়েছে, কিন্তু inject.js
+                                // ধরতে পারেনি — /results?...search_query=<লিংক>
+                                vid = vidFromPastedLink(u);
+                            }
                             if (vid != null) {
                                 if (vid.equals(sSuppressVideo)) {
                                     return false; // ফলব্যাক-পেজ — ওয়েবেই খুলুক
@@ -1779,6 +1784,70 @@ public class MainActivity extends Activity {
     }
 
     /** URL থেকে ভিডিওআইডি (watch/shorts/youtu.be), না পেলে null। */
+    /**
+     * `/results?search_query=<লিংক>` — ইউজার সার্চ-বারে ইউটিউব-লিংক পেস্ট করে
+     * এন্টার দিলে ইউটিউব পুরো লিংকটিকে কোয়েরি ধরে ফলাফল-পেজ লোড করে।
+     * কোয়েরিটি যদি সম্পূর্ণ একটি ভিডিও-লিংক হয়, ভিডিও-আইডি ফেরত দিই।
+     * সাধারণ শব্দ-সার্চে null — কিছুই বদলায় না।
+     */
+    private static String vidFromPastedLink(Uri u) {
+        try {
+            String path = u.getPath() == null ? "" : u.getPath();
+            if (!path.startsWith("/results")) {
+                return null;
+            }
+            String q = u.getQueryParameter("search_query");
+            if (q == null) {
+                return null;
+            }
+            q = q.trim();
+            // দ্বি-এনকোডেড (https%253A%252F%252F...) হলেও একবার খুলে নিই
+            if (q.startsWith("https%3A") || q.startsWith("http%3A")) {
+                try {
+                    q = Uri.decode(q);
+                } catch (Throwable t2) {
+                }
+            }
+            if (q.length() == 0 || q.length() > 300) {
+                return null;
+            }
+            if (!q.startsWith("http://") && !q.startsWith("https://")) {
+                if (q.startsWith("youtu.be/") || q.startsWith("youtube.com/")
+                        || q.startsWith("www.youtube.com/") || q.startsWith("m.youtube.com/")) {
+                    q = "https://" + q;
+                } else {
+                    return null;
+                }
+            }
+            Uri lu = Uri.parse(q);
+            String host = lu.getHost() == null ? "" : lu.getHost();
+            if (!(host.equals("youtu.be") || host.equals("youtube.com")
+                    || host.endsWith(".youtube.com"))) {
+                return null;
+            }
+            String p = lu.getPath() == null ? "" : lu.getPath();
+            String id = null;
+            if (p.startsWith("/watch")) {
+                id = lu.getQueryParameter("v");
+            } else if (p.startsWith("/shorts/") || p.startsWith("/embed/")
+                    || p.startsWith("/live/") || p.startsWith("/v/")) {
+                String rest = p.substring(p.indexOf('/', 1) + 1);
+                int slash = rest.indexOf('/');
+                id = slash > 0 ? rest.substring(0, slash) : rest;
+            } else if (host.equals("youtu.be")) {
+                String rest = p.length() > 1 ? p.substring(1) : "";
+                int slash = rest.indexOf('/');
+                id = slash > 0 ? rest.substring(0, slash) : rest;
+            }
+            if (id == null || id.length() != 11 || !id.matches("[A-Za-z0-9_-]{11}")) {
+                return null;
+            }
+            return id;
+        } catch (Throwable t) {
+        }
+        return null;
+    }
+
     private static String vidFromUrl(Uri u) {
         try {
             String host = u.getHost() == null ? "" : u.getHost();
