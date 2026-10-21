@@ -80,6 +80,31 @@ public final class Library {
         p(c).edit().remove("whist").apply();
     }
 
+    /** ইতিহাস থেকে একটি ভিডিও সরানো; সত্য = কিছু মুছেছে। */
+    public static boolean histRemove(Context c, String id) {
+        if (id == null || id.length() == 0) {
+            return false;
+        }
+        try {
+            JSONArray a = hist(c);
+            JSONArray n = new JSONArray();
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.optJSONObject(i);
+                if (o == null || id.equals(o.optString("id"))) {
+                    continue;
+                }
+                n.put(o);
+            }
+            if (n.length() == a.length()) {
+                return false;
+            }
+            p(c).edit().putString("whist", n.toString()).apply();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     // ===== Watch Later =====
 
     public static JSONArray wl(Context c) {

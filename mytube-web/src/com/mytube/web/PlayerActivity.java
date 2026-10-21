@@ -787,12 +787,6 @@ public class PlayerActivity extends Activity {
                                         ? pendingTitle : videoId);
                     }
                 })
-                .setNeutralButton("Open in web", new android.content.DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(android.content.DialogInterface d, int w) {
-                        fallbackWeb();
-                    }
-                })
                 .setNegativeButton("Close", new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface d, int w) {
@@ -810,16 +804,6 @@ public class PlayerActivity extends Activity {
             startActivity(Intent.createChooser(si, "Share details"));
         } catch (Throwable t) {
         }
-    }
-
-    private void fallbackWeb() {
-        try {
-            Toast.makeText(this, "Stream unavailable - opening web player",
-                    Toast.LENGTH_SHORT).show();
-        } catch (Throwable t) {
-        }
-        MainActivity.openInWeb("https://m.youtube.com/watch?v=" + videoId, videoId);
-        finish();
     }
 
     private void setStatus(String t) {

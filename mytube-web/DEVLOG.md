@@ -1514,3 +1514,48 @@ History-র কাজ এখন DOWNLOADING-এর শেষ-জব (Retry-স�
 সাথে মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓, dex-স্ট্রিং অডিটে
 DOWNLOADING/DOWNLOADED/"Delete download" সব উপস্থিত ✓, DownloadsSheet-এ
 Watch Later/Playlists রেফারেন্স **০** ✓।
+
+
+---
+
+## v2.09 — "Open in web" সরানো + হিস্ট্রি-স্ক্রিন ইউটিউব-ধাঁচে (vc 86)
+
+**ইউজার-নির্দেশ ১:** "when I am going offline here so retry cancel and open in
+web so we need to remove option open in web"।
+
+অফলাইনে `showResolveFail()` ডায়ালগে তিনটে বোতাম ছিল — Retry / Open in web /
+Close। নেটওয়ার্ক নেই এমন অবস্থায় "Open in web" সম্পূর্ণ অকেজো (ওয়েব-প্লেয়ার
+তো তখনো লোড হবে না)। সরানো হলো; এখন **Retry** ও **Close**।
+সাথে মরে-যাওয়া `fallbackWeb()` ও `MainActivity.openInWeb()` — দুটোই মুছে
+ফেলা হলো (অন্য কোথাও ব্যবহার ছিল না)।
+
+**ইউজার-নির্দেশ ২:** "make History ... like download I mean session taipe —
+when we will click on history then all videos you will show with picture
+and name"। আগে `showHistAll()` ছিল AlertDialog-এ প্লেইন টেক্সট-লিস্ট
+(`"(Oct 18)  Big Buck Bunny"` ধাঁচের)। কোনো ছবি নেই, স্ক্যান করা দুঃসাধ্য,
+১০০-এ ক্যাপ।
+
+প্রস্তাবনা `design/history-youtube-style.svg` → অনুমোদন: **দিনভিত্তিক
+সেকশন**, থাম্বনেইল **i.ytimg.com থেকে (সঞ্চিত ভিডিও-আইডি দিয়ে)**।
+
+**নতুন `HistorySheet`:**
+- পূর্ণ-স্ক্রিন: "History" + উপর-ডানে **Clear all**
+- সেকশন **TODAY / YESTERDAY / (তারিখ — "Oct 18")** — `dayLabel()`
+- প্রতিটি এন্ট্রি কার্ড: থাম্বনেইল (124×70, `YtThumb`) + দুই-লাইন শিরোনাম
+  + "2 hours ago" / "Yesterday at 21:40" / "Oct 18 at 18:02" (`whenStr()`)
+- তিন-বিন্দু মেনু → **Play** / **Remove from history**
+- ট্যাপ = ভিডিও খোলা; ফাঁকা অবস্থায় নিজস্ব বার্তা
+
+**নতুন `Ui.java`:** ডাউনলোড ও হিস্ট্রি — দুটো স্ক্রিনের চেহারা যাতে হুবহু
+মিলে যায়, তাই শেয়ার্ড টুকরো (`dp`, `hair`, `sectionLabel`, `roundRect`,
+`placeholder`, `DotsIcon`, `CheckIcon`, `ActionButton`, `sizeStr`, `fmtDur`)
+এখন এক জায়গায়। `DownloadsSheet` সেই অনুযায়ী রিফ্যাক্টর (চেহারায়
+কোনো পরিবর্তন নেই)।
+
+**নতুন `Library.histRemove(c, id)`** — একটি এন্ট্রি সরানো (আগে শুধু
+`clearHist` ছিল)।
+
+**যাচাই:** vc 86 / name 2.09, APK 4888479 B, সার্টিফিকেট v2.05–2.08-এর সাথে
+মিল → ওপরে ইনস্টল হবে, সেল্টেস্ট ৬৪/৬৪ ✓, dex-এ "Open in web"/
+"opening web player"/"fallback web" — সব **০** ✓, "Today"/"Yesterday"/
+"Remove from history"/"Clear all" উপস্থিত ✓।

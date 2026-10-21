@@ -781,51 +781,12 @@ public class MainActivity extends Activity {
     }
 
     /** সম্পূর্ণ দেখা-ইতিহাস তালিকা (ট্যাপে প্লে, Clear-সহ)। */
+    /** হিস্ট্রি — এখন পূর্ণ স্ক্রিন: দিনভিত্তিক সেকশন + থাম্বনেইল-কার্ড। */
     private void showHistAll() {
         try {
-            final org.json.JSONArray a = Library.hist(this);
-            if (a.length() == 0) {
-                Toast.makeText(this, "No watch history yet",
-                        Toast.LENGTH_SHORT).show();
-                return;
-            }
-            int n = Math.min(a.length(), 100);
-            String[] items = new String[n];
-            final String[] ids = new String[n];
-            for (int i = 0; i < n; i++) {
-                org.json.JSONObject o = a.optJSONObject(i);
-                ids[i] = o.optString("id");
-                items[i] = "(" + histWhen(o.optLong("at")) + ")  "
-                        + o.optString("t");
-            }
-            new AlertDialog.Builder(this)
-                    .setTitle("Watch history (" + a.length() + ")")
-                    .setItems(items, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            openFromLib(ids[w],
-                                    a.optJSONObject(w).optString("t"));
-                        }
-                    })
-                    .setNeutralButton("Clear", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface d, int w) {
-                            confirmDo("Clear watch history?",
-                                    "Removes the watched-videos list",
-                                    new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            Library.clearHist(MainActivity.this);
-                                            Toast.makeText(MainActivity.this,
-                                                    "Watch history cleared",
-                                                    Toast.LENGTH_SHORT).show();
-                                        }
-                                    });
-                        }
-                    })
-                    .setNegativeButton("Close", null)
-                    .show();
+            HistorySheet.show(this);
         } catch (Throwable t) {
+            Toast.makeText(this, "Could not open history", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -2680,22 +2641,6 @@ public class MainActivity extends Activity {
     }
 
     /** প্লেয়ারের ওয়েব-ফলব্যাক: watch-পেজ WebView-এ খোলে (একবার, লুপ ছাড়া)। */
-    static void openInWeb(final String url, String vid) {
-        StreamStore.note("fallback web " + vid);
-        sSuppressVideo = vid;
-        final MainActivity a = sInstance;
-        if (a != null) {
-            a.runOnUiThread(new Runnable() {
-                public void run() {
-                    try {
-                        a.web.loadUrl(url);
-                    } catch (Throwable t) {
-                    }
-                }
-            });
-        }
-    }
-
     /** আমাদের ইঞ্জিন বাজছে তখন ওয়েব-ভিডিও পজ থাকে (ডাবল-অডিও গার্ড)। */
     private void syncWebPause() {
         try {

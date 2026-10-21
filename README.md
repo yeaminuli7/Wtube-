@@ -56,11 +56,12 @@ Needs Linux + JDK + `curl`/`unzip`/`zip` + `python3`. The script downloads `andr
 ## Download
 
 Prebuilt APKs are on the [Releases page](https://github.com/yeaminuli7/vr/releases) —
-latest is [v2.08](https://github.com/yeaminuli7/vr/releases/tag/v2.08). Each release
+latest is [v2.09](https://github.com/yeaminuli7/vr/releases/tag/v2.09). Each release
 notes page has the direct `.apk` link at the top; open it on your phone and install.
 
 | Release | Version | Highlights |
 | --- | --- | --- |
+| [v2.09](https://github.com/yeaminuli7/vr/releases/tag/v2.09) | 2.09 (vc 86) | History rebuilt YouTube-style: day sections with thumbnail cards; "Open in web" removed from the offline dialog |
 | [v2.08](https://github.com/yeaminuli7/vr/releases/tag/v2.08) | 2.08 (vc 85) | Downloads screen rebuilt YouTube-style: thumbnail cards with duration badge, channel and size, three-dot menu, storage line, live progress |
 | [v2.07](https://github.com/yeaminuli7/vr/releases/tag/v2.07) | 2.07 (vc 84) | All login options removed: no sign-in row, no Account section, no sign-out. Sign-in pages get no injection; account-page browser routing now off by default |
 | [v2.06](https://github.com/yeaminuli7/vr/releases/tag/v2.06) | 2.06 (vc 83) | Telegram-style in-app browser (Custom Tabs): Subs/History/Your channel open signed in; offline build script |
