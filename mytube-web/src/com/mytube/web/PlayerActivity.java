@@ -20,6 +20,7 @@ import android.util.Rational;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -203,6 +204,14 @@ public class PlayerActivity extends Activity {
     private AudioManager am;
     private float downX, downY;
     private boolean verticalGesture = false;
+    // --- ভিডিও জুম (পিঞ্চ) + প্যান ---
+    private ScaleGestureDetector sgd;
+    private float zoom = 1f;          // 1.0 = স্বাভাবিক, সর্বোচ্চ 5.0
+    private float panX = 0f, panY = 0f;
+    private int baseW = 0, baseH = 0; // fitSurface() যে সাইজ ঠিক করেছে
+    private float zoomStartX = 0f, zoomStartY = 0f;
+    private static final float ZOOM_MIN = 1f;
+    private static final float ZOOM_MAX = 5f;
     // --- অডিও-মোড (v0.25) ---
     private IconButton btnAudio;
     private IconButton btnFull;
@@ -348,6 +357,7 @@ public class PlayerActivity extends Activity {
         public void onVideoSizeChanged(androidx.media3.common.VideoSize vs) {
             videoW = vs.width;
             videoH = vs.height;
+            zoomResetQuiet();   // নতুন ভিডিও = জুম ১০০% থেকে শুরু
             fitSurface();
         }
 
@@ -909,6 +919,7 @@ public class PlayerActivity extends Activity {
     public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
         applyVideoLayout();
+        zoomResetQuiet();
         fitSurface();
     }
 
@@ -1250,9 +1261,14 @@ public class PlayerActivity extends Activity {
                     player.seekTo(player.getCurrentPosition() + 10000);
                     showHud("+10s");
                 } else {
-                    fillMode = !fillMode;
-                    fitSurface();
-                    showHud(fillMode ? "Fill screen" : "Fit screen");
+                    // জুম করা থাকলে ডাবল-ট্যাপে ১০০%-এ ফেরত, নাহলে ফিট/ফিল টগল
+                    if (resetZoom()) {
+                        showHud("Zoom reset");
+                    } else {
+                        fillMode = !fillMode;
+                        fitSurface();
+                        showHud(fillMode ? "Fill screen" : "Fit screen");
+                    }
                 }
                 return true;
             }
@@ -1261,6 +1277,16 @@ public class PlayerActivity extends Activity {
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
                 if (player == null || isInPictureInPictureMode() || e1 == null) {
                     return false;
+                }
+                // জুম-ইন করা থাকলে এক-আঙুল টানা = ভিডিও সরানো (ব্রাইটনেস/ভলিউম নয়)
+                if (zoom > 1.001f) {
+                    if (e2.getPointerCount() > 1) {
+                        return false;
+                    }
+                    panX -= dx;
+                    panY -= dy;
+                    applyZoom();
+                    return true;
                 }
                 if (!verticalGesture && Math.abs(dy) > Math.abs(dx)
                         && Math.abs(e2.getY() - e1.getY()) > 12 * u) {
@@ -1297,6 +1323,39 @@ public class PlayerActivity extends Activity {
                 return true;
             }
         });
+        sgd = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScaleBegin(ScaleGestureDetector det) {
+                        zoomStartX = panX;
+                        zoomStartY = panY;
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onScale(ScaleGestureDetector det) {
+                        if (player == null || isInPictureInPictureMode()) {
+                            return true;
+                        }
+                        float f = det.getScaleFactor();
+                        if (!Float.isFinite(f) || f <= 0f) {
+                            return true;
+                        }
+                        float prev = zoom;
+                        zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * f));
+                        if (zoom <= ZOOM_MIN + 0.001f) {
+                            panX = 0f;
+                            panY = 0f;
+                        }
+                        // আঙুলের মাঝখান বিন্দুটিকে স্থির রাখা (যাতে জুম "লাফ" না দেয়)
+                        float zf = prev > 0.001f ? zoom / prev : 1f;
+                        panX = zoomStartX * zf + (det.getFocusX() - surfaceBox.getWidth() / 2f) * (1f - zf);
+                        panY = zoomStartY * zf + (det.getFocusY() - surfaceBox.getHeight() / 2f) * (1f - zf);
+                        applyZoom();
+                        showHud("Zoom " + Math.round(zoom * 100) + "%");
+                        return true;
+                    }
+                });
         surfaceBox.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent e) {
@@ -1307,7 +1366,14 @@ public class PlayerActivity extends Activity {
                         verticalGesture = false;
                     }
                 }
-                gd.onTouchEvent(e);
+                // পিঞ্চ চলাকালে সিঙ্গেল-ট্যাপ/স্ক্রল জেসচার বন্ধ
+                boolean scaling = sgd != null && (sgd.isInProgress() || e.getPointerCount() > 1);
+                if (sgd != null) {
+                    sgd.onTouchEvent(e);
+                }
+                if (!scaling) {
+                    gd.onTouchEvent(e);
+                }
                 return true;
             }
         });
@@ -2643,8 +2709,65 @@ public class PlayerActivity extends Activity {
                 w = (int) (hgt * ar);
             }
         }
+        baseW = w;
+        baseH = hgt;
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w, hgt, Gravity.CENTER);
         surface.setLayoutParams(lp);
+        applyZoom();
+    }
+
+    // ---------- ভিডিও জুম (পিঞ্চ) + প্যান ----------
+
+    /** জুম + প্যান SurfaceView-এ প্রয়োগ; ভিডিও যাতে হারিয়ে না যায়, প্যান সীমিত। */
+    private void applyZoom() {
+        if (surface == null || surfaceBox == null) {
+            return;
+        }
+        try {
+            surface.setScaleX(zoom);
+            surface.setScaleY(zoom);
+            surface.setPivotX(surface.getWidth() / 2f);
+            surface.setPivotY(surface.getHeight() / 2f);
+
+            int bw = surfaceBox.getWidth();
+            int bh = surfaceBox.getHeight();
+            float ovX = Math.max(0f, (baseW * zoom - bw) / 2f);
+            float ovY = Math.max(0f, (baseH * zoom - bh) / 2f);
+            if (panX > ovX) {
+                panX = ovX;
+            }
+            if (panX < -ovX) {
+                panX = -ovX;
+            }
+            if (panY > ovY) {
+                panY = ovY;
+            }
+            if (panY < -ovY) {
+                panY = -ovY;
+            }
+            surface.setTranslationX(panX);
+            surface.setTranslationY(panY);
+        } catch (Throwable t) {
+        }
+    }
+
+    /** জুম ১০০%-এ ফেরানো; সত্য = আগে জুম-ইন করা ছিল। */
+    private boolean resetZoom() {
+        if (zoom <= 1.001f && Math.abs(panX) < 0.5f && Math.abs(panY) < 0.5f) {
+            return false;
+        }
+        zoom = 1f;
+        panX = 0f;
+        panY = 0f;
+        applyZoom();
+        return true;
+    }
+
+    /** HUD ছাড়াই জুম রিসেট (নতুন ভিডিও / ঘোরানোর সময়)। */
+    private void zoomResetQuiet() {
+        zoom = 1f;
+        panX = 0f;
+        panY = 0f;
     }
 
     private void refreshHud() {

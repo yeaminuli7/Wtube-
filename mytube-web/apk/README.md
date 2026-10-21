@@ -49,6 +49,7 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
+| [v2.10](https://github.com/yeaminuli7/vr/releases/tag/v2.10) | 2.10 (vc 87) | Pinch to zoom the video (100-500%), drag to pan while zoomed, double-tap to reset. Existing gestures unchanged |
 | [v2.09](https://github.com/yeaminuli7/vr/releases/tag/v2.09) | 2.09 (vc 86) | History rebuilt YouTube-style: day sections with thumbnail cards; "Open in web" removed from the offline dialog |
 | [v2.08](https://github.com/yeaminuli7/vr/releases/tag/v2.08) | 2.08 (vc 85) | Downloads screen rebuilt YouTube-style: thumbnail cards with duration badge, channel and size, three-dot menu, storage line, live progress |
 | [v2.07](https://github.com/yeaminuli7/vr/releases/tag/v2.07) | 2.07 (vc 84) | All login options removed: no sign-in row, no Account section, no sign-out. Sign-in pages get no injection; account-page browser routing now off by default |
