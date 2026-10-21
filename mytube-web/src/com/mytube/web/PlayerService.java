@@ -92,6 +92,38 @@ public class PlayerService extends Service {
     /** Live reference while the service is alive (same process only). */
     public static volatile PlayerService sSelf;
 
+    /**
+     * ইউজার-নির্ধারিত গেইন (০..১)। ভলিউম-জেসচার সিস্টম-স্ট্রিমের মাঝের
+     * ধাপগুলো মসৃণ করতে এটি ব্যবহার করে; ডাকিং (0.2x) এর ওপর ভিত্তি করে।
+     */
+    private static volatile float sUserGain = 1f;
+    private static volatile boolean sDucked = false;
+
+    /** গেইন বসানো; চলমান সার্ভিস থাকলে সাথে সাথে প্রয়োগ হয়। */
+    public static void setUserGain(float g) {
+        if (Float.isNaN(g)) {
+            return;
+        }
+        sUserGain = Math.max(0f, Math.min(1f, g));
+        applyGain();
+    }
+
+    public static float userGain() {
+        return sUserGain;
+    }
+
+    /** সার্ভিসের ExoPlayer-এ গেইন প্রয়োগ (ডাকিং হলে ২০%)। */
+    static void applyGain() {
+        PlayerService s = sSelf;
+        if (s == null || s.player == null) {
+            return;
+        }
+        try {
+            s.player.setVolume(sDucked ? sUserGain * 0.2f : sUserGain);
+        } catch (Throwable t) {
+        }
+    }
+
     private static final int NID = 21;
     private static final String CH = "player";
 
@@ -157,9 +189,11 @@ public class PlayerService extends Service {
                         }
                         pause();
                     } else if (f == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
-                        player.setVolume(0.2f);
+                        sDucked = true;
+                        applyGain();
                     } else if (f == AudioManager.AUDIOFOCUS_GAIN) {
-                        player.setVolume(1f);
+                        sDucked = false;
+                        applyGain();
                         if (pausedByFocus) {
                             pausedByFocus = false;
                             play();

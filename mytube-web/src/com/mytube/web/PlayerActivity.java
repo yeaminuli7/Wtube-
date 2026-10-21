@@ -212,6 +212,10 @@ public class PlayerActivity extends Activity {
     private float zoomStartX = 0f, zoomStartY = 0f;
     private static final float ZOOM_MIN = 1f;
     private static final float ZOOM_MAX = 5f;
+    // --- মসৃণ ভলিউম/ব্রাইটনেস: ভগ্নাংশ জমা রাখা হয়, প্রতি ইভেন্টে ফেলা যায় না ---
+    private float volAcc = -1f;      // 0 .. max (float), -1 = শুরু হয়নি
+    private int volStepWritten = -1; // সর্বশেষ সিস্টমে লেখা পূর্ণসংখ্যা ধাপ
+    private float brightAcc = -1f;
     // --- অডিও-মোড (v0.25) ---
     private IconButton btnAudio;
     private IconButton btnFull;
@@ -1300,24 +1304,29 @@ public class PlayerActivity extends Activity {
                 float delta = (downY - e2.getY()) / (surfaceBox.getHeight() * 0.75f);
                 if (downX < surfaceBox.getWidth() / 2f) {
                     // ব্রাইটনেস (শুধু এই উইন্ডোতে — কোনো পারমিশন নয়)
-                    float cur = getWindow().getAttributes().screenBrightness;
-                    if (cur < 0) {
-                        cur = 0.5f;
+                    if (brightAcc < 0f) {
+                        float cur = getWindow().getAttributes().screenBrightness;
+                        brightAcc = cur < 0f ? 0.5f : cur;
                     }
-                    float nv = Math.min(1f, Math.max(0.02f, cur + delta * 0.25f));
+                    brightAcc = Math.min(1f, Math.max(0.02f, brightAcc + delta * 0.25f));
                     android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
-                    lp.screenBrightness = nv;
+                    lp.screenBrightness = brightAcc;
                     getWindow().setAttributes(lp);
-                    showHud("Brightness " + Math.round(nv * 100) + "%");
+                    showHud("Brightness " + Math.round(brightAcc * 100) + "%");
                 } else {
                     int max = am != null ? am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) : 15;
-                    int cur = am != null
-                            ? am.getStreamVolume(AudioManager.STREAM_MUSIC) : max / 2;
-                    int nv = Math.min(max, Math.max(0, Math.round(cur + delta * max * 0.5f)));
-                    if (am != null && nv != cur) {
-                        am.setStreamVolume(AudioManager.STREAM_MUSIC, nv, 0);
+                    if (max <= 0) {
+                        max = 15;
                     }
-                    showHud("Volume " + Math.round(100f * nv / Math.max(1, max)) + "%");
+                    if (volAcc < 0f) {
+                        volAcc = am != null
+                                ? am.getStreamVolume(AudioManager.STREAM_MUSIC) : max / 2f;
+                    }
+                    // ধীরে টানলেও প্রতিটি পিক্সেল জমা হয় — আগে ভগ্নাংশ ফেলে দেওয়ায়
+                    // ছোট নাড়াচাড়ায় কিছুই হতো না, তারপর হঠাৎ এক ধাপ লাফাতো
+                    volAcc = Math.min(max, Math.max(0f, volAcc + delta * max * 0.5f));
+                    applyVolume(volAcc, max);
+                    showHud("Volume " + Math.round(100f * volAcc / max) + "%");
                 }
                 downY = e2.getY();
                 return true;
@@ -1363,6 +1372,10 @@ public class PlayerActivity extends Activity {
                         || e.getAction() == MotionEvent.ACTION_UP
                         || e.getAction() == MotionEvent.ACTION_CANCEL) {
                     if (e.getAction() != MotionEvent.ACTION_DOWN) {
+                        // আঙুল তোলা = ভলিউম কাছের ধাপে নামিয়ে গেইন স্বাভাবিক
+                        if (verticalGesture) {
+                            settleVolumeGesture();
+                        }
                         verticalGesture = false;
                     }
                 }
@@ -2748,6 +2761,65 @@ public class PlayerActivity extends Activity {
             surface.setTranslationX(panX);
             surface.setTranslationY(panY);
         } catch (Throwable t) {
+        }
+    }
+
+    /**
+     * ভলিউম প্রয়োগ: সিস্টম-স্ট্রিম কেবল পূর্ণসংখ্যা ধাপ নেয় (সাধারণত ১৫টি),
+     * তাই ধাপের মাঝের অংশটা ExoPlayer-এর গেইন দিয়ে পূরণ করা হয় — ফলে
+     * শব্দ ধাপে ধাপে না লাফিয়ে মসৃণভাবে বাড়ে-কমে।
+     */
+    private void applyVolume(float acc, int max) {
+        if (am == null || max <= 0) {
+            return;
+        }
+        try {
+            int step = (int) Math.ceil(acc - 0.0001f); // ওপরের ধাপ = হেডরুম
+            if (step < 0) {
+                step = 0;
+            }
+            if (step > max) {
+                step = max;
+            }
+            if (step != volStepWritten) {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, step, 0);
+                volStepWritten = step;
+            }
+            float gain = step > 0 ? Math.min(1f, acc / step) : 0f;
+            PlayerService.setUserGain(gain);
+        } catch (Throwable t) {
+        }
+    }
+
+    /**
+     * আঙুল তোলার সময়: কাছের ধাপে নামিয়ে গেইন ১.০-এ ফেরানো। তখন হার্ডওয়্যার
+     * ভলিউম-বোতাম আবার স্বাভাবিকভাবে কাজ করে (কোনো গেইন-ওভারলে থাকে না)।
+     */
+    private void settleVolumeGesture() {
+        try {
+            if (volAcc >= 0f) {
+                int max = am != null ? am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) : 15;
+                if (max <= 0) {
+                    max = 15;
+                }
+                int landed = Math.round(volAcc);
+                if (landed < 0) {
+                    landed = 0;
+                }
+                if (landed > max) {
+                    landed = max;
+                }
+                if (am != null) {
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, landed, 0);
+                }
+                volStepWritten = landed;
+            }
+        } catch (Throwable t) {
+        } finally {
+            PlayerService.setUserGain(1f);
+            volAcc = -1f;
+            brightAcc = -1f;
+            volStepWritten = -1;
         }
     }
 
