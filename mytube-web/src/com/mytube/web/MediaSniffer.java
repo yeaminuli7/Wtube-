@@ -24,12 +24,33 @@ public class MediaSniffer {
         public final boolean audio;
         public final long at;
 
+        /** ফাইলের আকার (বাইট); -1 = এখনো অজানা, -2 = পাওয়া যায়নি। */
+        public volatile long size = -1;
+
         M(String u, String h, String e, boolean a) {
             url = u;
             host = h;
             ext = e;
             audio = a;
             at = System.currentTimeMillis();
+        }
+
+        /** "12.4 MB" / null (আকার অজানা হলে কিছুই দেখানো হয় না)। */
+        public String sizeStr() {
+            long n = size;
+            if (n <= 0) {
+                return null;
+            }
+            if (n >= 1073741824L) {
+                return String.format(java.util.Locale.US, "%.1f GB", n / 1073741824.0);
+            }
+            if (n >= 1048576L) {
+                return String.format(java.util.Locale.US, "%.1f MB", n / 1048576.0);
+            }
+            if (n >= 1024L) {
+                return (n / 1024L) + " KB";
+            }
+            return n + " B";
         }
 
         /** "Video · tiktok.com" / "Audio · cdn.example.com" */
@@ -99,12 +120,30 @@ public class MediaSniffer {
             return false;
         }
         try {
-            java.net.URI uri = new java.net.URI(full);
-            String sch = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+            // নিজে ভেঙে নিই — java.net.URI কঠোর, আসল CDN-URL-এ প্রায়ই ব্যর্থ হয়
+            int sc = full.indexOf("://");
+            if (sc <= 0) {
+                return false;
+            }
+            String sch = full.substring(0, sc).toLowerCase();
             if (!sch.equals("http") && !sch.equals("https")) {
                 return false;
             }
-            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
+            int hash = full.indexOf('#');
+            String base = hash >= 0 ? full.substring(0, hash) : full;
+            int hs = sc + 3;
+            int slash = base.indexOf('/', hs);
+            String hostPort = slash >= 0 ? base.substring(hs, slash) : base.substring(hs);
+            String pathQ = slash >= 0 ? base.substring(slash) : "";
+            int qm = pathQ.indexOf('?');
+            String path = qm >= 0 ? pathQ.substring(0, qm) : pathQ;
+            String q = qm >= 0 ? pathQ.substring(qm + 1).toLowerCase() : "";
+            int at = hostPort.indexOf('@');
+            if (at >= 0) {
+                hostPort = hostPort.substring(at + 1);
+            }
+            int colon = hostPort.lastIndexOf(':');
+            String host = (colon > 0 ? hostPort.substring(0, colon) : hostPort).toLowerCase();
             if (host.length() == 0 || host.indexOf('.') < 0) {
                 return false;
             }
@@ -114,9 +153,7 @@ public class MediaSniffer {
                     || host.endsWith("gstatic.com")) {
                 return false;
             }
-            String path = uri.getPath() == null ? "" : uri.getPath();
             String lower = path.toLowerCase();
-            String q = uri.getQuery() == null ? "" : uri.getQuery().toLowerCase();
 
             // টুকরো/সেগমেন্ট/মিডিয়া-বহির্ভূত জিনিস বাদ
             if (lower.endsWith(".ts") || lower.endsWith(".m4s")
@@ -164,15 +201,85 @@ public class MediaSniffer {
                         return false;
                     }
                 }
-                list.add(0, new M(full, host, ext, audio));
+                M m = new M(full, host, ext, audio);
+                list.add(0, m);
                 while (list.size() > MAX) {
                     list.remove(list.size() - 1);
                 }
+                resolveSize(m);
             }
             return true;
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    private static final java.util.concurrent.ExecutorService SZ =
+            java.util.concurrent.Executors.newFixedThreadPool(2);
+
+    /**
+     * ফাইলের আকার বের করা (অপশন-শিটে "12.4 MB" দেখানোর জন্য)। HEAD না
+     * চললে Range: bytes=0-0 দিয়ে Content-Range পড়া হয়। ব্যর্থ হলে চুপচাপ
+     * -2 — কিছুই দেখানো হয় না।
+     */
+    private static void resolveSize(final M m) {
+        try {
+            SZ.execute(new Runnable() {
+                @Override
+                public void run() {
+                    long n = probeSize(m.url);
+                    m.size = n > 0 ? n : -2;
+                }
+            });
+        } catch (Throwable t) {
+            m.size = -2;
+        }
+    }
+
+    private static long probeSize(String u) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+            c.setRequestMethod("HEAD");
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("User-Agent",
+                    "com.google.android.youtube/20.05.38 (Linux; U; Android 11) gzip");
+            long len = c.getContentLength();
+            if (len > 0) {
+                return len;
+            }
+        } catch (Throwable t) {
+        } finally {
+            try {
+                if (c != null) {
+                    c.disconnect();
+                }
+            } catch (Throwable t) {
+            }
+        }
+        // HEAD বন্ধ — প্রথম বাইটটুকু চেয়ে মোট আকার জানা যায়
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("Range", "bytes=0-0");
+            String cr = c.getHeaderField("Content-Range"); // bytes 0-0/12345
+            c.disconnect();
+            if (cr != null) {
+                int sl = cr.lastIndexOf('/');
+                if (sl > 0) {
+                    String tot = cr.substring(sl + 1).trim();
+                    if (tot.length() > 0 && !tot.equals("*")) {
+                        return Long.parseLong(tot);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+        }
+        return -1;
     }
 
     /** এক্সটেনশন অনুযায়ী MIME (MediaStore-এ সঠিক ফোল্ডারে বসার জন্য)। */

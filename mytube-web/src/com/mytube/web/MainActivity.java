@@ -381,14 +381,9 @@ public class MainActivity extends Activity {
                                 new ByteArrayInputStream(new byte[0]));
                     }
                     StreamStore.capture(u);
-                    if (MediaSniffer.capture(u) && web != null) {
-                        web.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                onMediaFound();
-                            }
-                        });
-                    }
+                    // শিট নিজেই ৬০০ms-এ রিফ্রেশ হয়, তাই এখানে কিছু করার নেই —
+                    // কেবল ফাইলটা তালিকায় উঠলেই যথেষ্ট
+                    MediaSniffer.capture(u);
                 } catch (Throwable t) {
                 }
                 return null;
@@ -467,6 +462,15 @@ public class MainActivity extends Activity {
                             v.evaluateJavascript(inj, null);
                         } catch (Throwable t) {
                         }
+                    }
+                    // বহিঃ-পেজের নিজের <video> ঠিকানাও দেখি — নেটওয়ার্ক-লেয়ার
+                    // কিছু মিস করলে (MSE) এখান থেকেই ধরা পড়বে
+                    try {
+                        if (MediaSniffer.isArmed() && url != null
+                                && !url.contains("youtube.com")) {
+                            v.evaluateJavascript(mediaProbeJs(), null);
+                        }
+                    } catch (Throwable t) {
                     }
                 }
                 /* write cookies through to disk so the signed-in session survives
@@ -3035,81 +3039,77 @@ public class MainActivity extends Activity {
                 return;
             }
             MediaSniffer.arm();
-            mediaSheetShown = false;
+            String pageTitle = "";
             if (web != null) {
                 web.loadUrl(u);
+                try {
+                    pageTitle = web.getTitle();
+                } catch (Throwable t) {
+                }
             }
             if (navBar != null) {
                 navBar.setVisibility(View.GONE);
             }
+            // ইউটিউবে ডাউনলোড চাপলে যেমন অপশন-শিট আসে, এখানেও তাই — পেজ
+            // লোড হওয়ার সাথে সাথেই খুলে যায় এবং ফাইল পেলেই সারি যোগ হয়
+            MediaOptionsSheet.show(this,
+                    pageTitle == null || pageTitle.length() == 0 ? hostOfUrl(u) : pageTitle,
+                    new MediaOptionsSheet.Source() {
+                        @Override
+                        public java.util.ArrayList<MediaSniffer.M> list() {
+                            return MediaSniffer.list();
+                        }
+
+                        @Override
+                        public boolean done() {
+                            return false; // নিজের ১৫-সেকেন্ড সময়সীমা শিটেই আছে
+                        }
+                    },
+                    new MediaOptionsSheet.OnPick() {
+                        @Override
+                        public void pick(MediaSniffer.M m) {
+                            try {
+                                startService(new Intent(MainActivity.this,
+                                        DownloadService.class)
+                                        .setAction(DownloadService.ACT_START)
+                                        .putExtra(DownloadService.EXTRA_TITLE,
+                                                titleOr(m, u))
+                                        .putExtra(DownloadService.EXTRA_DIRECT, m.url)
+                                        .putExtra(DownloadService.EXTRA_DEXT, m.ext));
+                                DownloadsSheet.show(MainActivity.this);
+                            } catch (Throwable t) {
+                            }
+                        }
+                    });
         } catch (Throwable t) {
         }
     }
 
-    /** এই পেজ-সেশনে মিডিয়া-শিট একবারই — বারবার বিরক্ত করি না। */
-    private boolean mediaSheetShown = false;
+    private String titleOr(MediaSniffer.M m, String fallback) {
+        try {
+            String t = web != null ? web.getTitle() : null;
+            if (t != null && t.length() > 0) {
+                return t.length() > 80 ? t.substring(0, 80) : t;
+            }
+        } catch (Throwable t) {
+        }
+        return hostOfUrl(fallback);
+    }
 
     /**
-     * স্নিফার একটি মিডিয়া-ফাইল পেয়েছে। ১.২ সেকেন্ড অপেক্ষা করি যাতে একই
-     * পেজের একাধিক ফাইল একসাথে দেখা যায়, তারপর একটি ছোট তালিকা দেখাই।
+     * বহিঃ-পেজে ঢোকানো ছোট স্ক্রিপ্ট: পেজের <video>/<audio> ও <source>
+     * এলিমেন্টের ঠিকানা বারবার পড়ে অ্যাপকে জানায়। blob: ঠিকানা কাজে লাগে
+     * না, তাই bridge সেগুলো নিজেই বাদ দেয়।
      */
-    private void onMediaFound() {
-        if (mediaSheetShown) {
-            return;
-        }
-        mediaSheetShown = true;
-        final View post = web != null ? web : this.getWindow().getDecorView();
-        post.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    showMediaSheet();
-                } catch (Throwable t) {
-                }
-            }
-        }, 1200);
-    }
-
-    /** পাওয়া মিডিয়া-ফাইলগুলোর তালিকা — ট্যাপে ডাউনলোড শুরু। */
-    private void showMediaSheet() {
-        final java.util.ArrayList<MediaSniffer.M> ms = MediaSniffer.list();
-        if (ms.isEmpty() || isFinishing()) {
-            return;
-        }
-        String[] labels = new String[ms.size()];
-        for (int i = 0; i < ms.size(); i++) {
-            labels[i] = ms.get(i).label();
-        }
-        String title = "Media found";
-        try {
-            if (web != null && web.getTitle() != null && web.getTitle().length() > 0) {
-                title = web.getTitle();
-                if (title.length() > 60) {
-                    title = title.substring(0, 60);
-                }
-            }
-        } catch (Throwable t) {
-        }
-        final String pageTitle = title;
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setItems(labels, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        try {
-                            MediaSniffer.M m = ms.get(w);
-                            startService(new Intent(MainActivity.this, DownloadService.class)
-                                    .setAction(DownloadService.ACT_START)
-                                    .putExtra(DownloadService.EXTRA_TITLE, pageTitle)
-                                    .putExtra(DownloadService.EXTRA_DIRECT, m.url)
-                                    .putExtra(DownloadService.EXTRA_DEXT, m.ext));
-                            DownloadsSheet.show(MainActivity.this);
-                        } catch (Throwable t) {
-                        }
-                    }
-                })
-                .setNegativeButton("Close", null)
-                .show();
+    private static String mediaProbeJs() {
+        return "(function(){try{if(window.__mtprobe){return;}window.__mtprobe=1;"
+                + "function grab(u){try{if(!u){return;}MTApp.mediaFound(u);}catch(e){}}"
+                + "function scan(){try{"
+                + "var vs=document.querySelectorAll('video,audio');"
+                + "for(var i=0;i<vs.length;i++){var v=vs[i];grab(v.currentSrc);grab(v.src);"
+                + "var ss=v.querySelectorAll('source');"
+                + "for(var j=0;j<ss.length;j++){grab(ss[j].src);}}}catch(e){}}"
+                + "setInterval(scan,1200);scan();}catch(e){}})();";
     }
 
     private String readAsset(String name) {
@@ -3166,6 +3166,21 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** পেজের নিজের <video> থেকে পাওয়া মিডিয়া-URL (স্নিফার মিস করলে)। */
+        @JavascriptInterface
+        public void mediaFound(final String url) {
+            try {
+                if (url == null || url.length() == 0) {
+                    return;
+                }
+                if (url.startsWith("blob:") || url.startsWith("data:")) {
+                    return; // blob — ডাউনলোড করার মতো ঠিকানা নয়
+                }
+                MediaSniffer.capture(url);
+            } catch (Throwable t) {
+            }
         }
 
         @JavascriptInterface
@@ -3233,7 +3248,6 @@ public class MainActivity extends Activity {
                 lastUrl = url;
                 // ইউটিউবে ফিরে এলে বহিঃ-পেজের স্নিফিং বন্ধ
                 MediaSniffer.disarm();
-                mediaSheetShown = false;
             }
         }
 

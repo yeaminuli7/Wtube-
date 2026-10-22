@@ -56,11 +56,12 @@ Needs Linux + JDK + `curl`/`unzip`/`zip` + `python3`. The script downloads `andr
 ## Download
 
 Prebuilt APKs are on the [Releases page](https://github.com/yeaminuli7/vr/releases) —
-latest is [v2.16](https://github.com/yeaminuli7/vr/releases/tag/v2.16). Each release
+latest is [v2.17](https://github.com/yeaminuli7/vr/releases/tag/v2.17). Each release
 notes page has the direct `.apk` link at the top; open it on your phone and install.
 
 | Release | Version | Highlights |
 | --- | --- | --- |
+| [v2.17](https://github.com/yeaminuli7/vr/releases/tag/v2.17) | 2.17 (vc 94) | Non-YouTube links now open a download-options sheet (format, size, DOWNLOAD button) instead of just loading the page |
 | [v2.16](https://github.com/yeaminuli7/vr/releases/tag/v2.16) | 2.16 (vc 93) | Paste a TikTok/Instagram/Facebook (or any) link into the search bar: the page opens and, if it exposes a media file, a download sheet appears |
 | [v2.15](https://github.com/yeaminuli7/vr/releases/tag/v2.15) | 2.15 (vc 92) | Downloads show time remaining alongside the existing percentage and speed, in both the app and the notification |
 | [v2.14](https://github.com/yeaminuli7/vr/releases/tag/v2.14) | 2.14 (vc 91) | Slow-loading fix: detects YouTube's `n`-parameter throttling and switches to an unthrottled source; caches visitorData to cut a round-trip per video |
