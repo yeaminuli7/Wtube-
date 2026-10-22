@@ -693,12 +693,15 @@ public final class DownloadsSheet {
         double mbs = s.speed > 0 ? s.speed : s.got / 1048576.0 / sec;
         if (s.total > 0) {
             int pct = (int) Math.min(95, 95 * s.got / s.total);
+            String eta = Ui.etaStr(s.got, s.total, mbs);
             return String.format(java.util.Locale.US,
-                    "%d%%  ·  %.1f MB/s  ·  %.1f of %.1f MB",
-                    pct, mbs, s.got / 1048576.0, s.total / 1048576.0);
+                    "%d%%  ·  %.1f MB/s  ·  %.1f of %.1f MB%s",
+                    pct, mbs, s.got / 1048576.0, s.total / 1048576.0,
+                    eta != null ? "  ·  " + eta : "");
         }
-        return String.format(java.util.Locale.US, "%.1f MB  ·  %.1f MB/s",
-                s.got / 1048576.0, mbs);
+        String eta2 = s.total > 0 ? Ui.etaStr(s.got, s.total, mbs) : null;
+        return String.format(java.util.Locale.US, "%.1f MB  ·  %.1f MB/s%s",
+                s.got / 1048576.0, mbs, eta2 != null ? "  ·  " + eta2 : "");
     }
 
     private static int progressOf(DownloadService.Snap s) {

@@ -1765,3 +1765,28 @@ APK 4,892,575 B, VALID, misaligned 0, সার্টিফিকেট v2.05–
 dex-এ throttledUrl/resolveInner/lastDiag/"THROTTLED"/"unthrottled ANDROID
 source selected" উপস্থিত; v2.11–v2.13-এর কোড অটুট। সেল্টেস্ট ১৩৫/১৩৫।
 MD5 v2.13 ≠ v2.14 (আকার একই হওয়া কাকতালীয়), dex-এ throttledUrl কেবল 2.14-এ।
+
+---
+
+## v2.15 — ডাউনলোডে শতাংশ, গতি ও বাকি-সময় (vc 91→92)
+
+**ইউজার-নির্দেশ:** "the download option is not showing percent I mean how much
+have downloaded what is speed and also how many time will take"।
+
+**আগে থেকেই যা ছিল:** DownloadService-এর `Snap`-এ `got`/`total`/`speed` এবং
+Downloads স্ক্রিনে `"45%  ·  1.2 MB/s  ·  3.4 of 7.6 MB"` — অর্থাৎ শতাংশ ও গতি
+আগেই দেখাত। **যা ছিল না: বাকি সময় (ETA)।**
+
+**যোগ করা হলো:**
+- `Ui.etaStr(got, total, mbs)` — ভগ্নাংশ থেকে ETA: `~45s left`,
+  `~3m 20s left`, `~1h 05m left`। গতি অজানা / ইতিমধ্যেই শেষ / total=0 হলে
+  `null` (কিছুই দেখায় না, ভুল তথ্য দেয় না)।
+- Downloads কার্ডের স্ট্যাটাস-লাইনে ETA যোগ:
+  `"45%  ·  1.2 MB/s  ·  3.4 of 7.6 MB  ·  ~3m 20s left"`
+- নোটিফিকেশনেও একই: `"title - 45% - 1.2 MB/s - ~3m 20s left"`
+
+**যাচাই:** `etaStr`-এর আসল সোর্স javac দিয়ে আলাদা কম্পাইল করে ১০টি কেস —
+**১০/১০** (৫ সেকেন্ড, ৩০ সেকেন্ড, ৩ মিনিট ২০, ১ মিনিট, ১ ঘণ্টা ০৫, এবং
+শূন্য-গতি/total=0/শেষ-হয়ে-গেছে → null)। vc 92 / name 2.15, APK 4,892,575 B,
+VALID, misaligned 0, সার্টিফিকেট অপরিবর্তিত, MD5 v2.14 থেকে আলাদা,
+v2.11–v2.14-এর সব ফিচার dex-এ অটুট।

@@ -1365,8 +1365,10 @@ public class DownloadService extends Service {
         double mbs = j.winSpeed > 0 ? j.winSpeed : got / 1048576.0 / sec;
         if (j.total > 0) {
             int pct = (int) Math.min(95, 95 * got / j.total);
+            String eta = Ui.etaStr(got, j.total, mbs);
             return base + " - " + pct + "% - "
-                    + String.format(java.util.Locale.US, "%.1f MB/s", mbs);
+                    + String.format(java.util.Locale.US, "%.1f MB/s", mbs)
+                    + (eta != null ? " - " + eta : "");
         }
         return base + " - " + String.format(java.util.Locale.US,
                 "%.1f MB - %.1f MB/s", got / 1048576.0, mbs);

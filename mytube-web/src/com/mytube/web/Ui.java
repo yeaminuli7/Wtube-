@@ -137,6 +137,33 @@ public final class Ui {
         return bytes + " B";
     }
 
+    /**
+     * ডাউনলোড শেষ হতে কত সময় বাকি। গতি জানা না থাকলে null।
+     * "~45s left", "~3m 20s left", "~1h 05m left"
+     */
+    static String etaStr(long got, long total, double mbs) {
+        try {
+            if (got <= 0 || total <= 0 || got >= total || !(mbs > 0.001)) {
+                return null;
+            }
+            long sec = (long) Math.ceil((total - got) / 1048576.0 / mbs);
+            if (sec < 0) {
+                return null;
+            }
+            if (sec < 60) {
+                return "~" + sec + "s left";
+            }
+            if (sec < 3600) {
+                long m = sec / 60, r = sec % 60;
+                return r > 0 ? "~" + m + "m " + r + "s left" : "~" + m + "m left";
+            }
+            long h = sec / 3600, m = (sec % 3600) / 60;
+            return "~" + h + "h " + (m < 10 ? "0" + m : String.valueOf(m)) + "m left";
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     static String fmtDur(long sec) {
         long h = sec / 3600L;
         long m = (sec % 3600L) / 60L;
