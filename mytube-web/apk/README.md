@@ -49,6 +49,7 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
+| [v2.18](https://github.com/yeaminuli7/vr/releases/tag/v2.18) | 2.18 (vc 95) | Zoom no longer hijacks the volume swipe (up/down = volume, left/right = pan, two fingers = pan). Native yt-dlp-style extraction for TikTok/Facebook/Instagram |
 | [v2.17](https://github.com/yeaminuli7/vr/releases/tag/v2.17) | 2.17 (vc 94) | Non-YouTube links now open a download-options sheet (format, size, DOWNLOAD button) instead of just loading the page |
 | [v2.16](https://github.com/yeaminuli7/vr/releases/tag/v2.16) | 2.16 (vc 93) | Paste a TikTok/Instagram/Facebook (or any) link into the search bar: the page opens and, if it exposes a media file, a download sheet appears |
 | [v2.15](https://github.com/yeaminuli7/vr/releases/tag/v2.15) | 2.15 (vc 92) | Downloads show time remaining alongside the existing percentage and speed, in both the app and the notification |

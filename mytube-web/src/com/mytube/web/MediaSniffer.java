@@ -214,6 +214,44 @@ public class MediaSniffer {
         }
     }
 
+    /**
+     * এক্সট্র্যাক্টর (TikTok/Facebook/Instagram) থেকে পাওয়া ঠিকানা যোগ করা —
+     * "armed" বা হোস্ট-ফিল্টারের বাইরে, কারণ এগুলো ইচ্ছাকৃতভাবে বাছা।
+     */
+    public static void offer(String url, String ext, boolean audio, String host) {
+        if (url == null || url.length() == 0) {
+            return;
+        }
+        try {
+            String h = host;
+            if (h == null || h.length() == 0) {
+                try {
+                    int sc = url.indexOf("://");
+                    int sl = url.indexOf('/', sc + 3);
+                    h = sc >= 0 ? (sl > 0 ? url.substring(sc + 3, sl) : url.substring(sc + 3))
+                            : "media";
+                } catch (Throwable t) {
+                    h = "media";
+                }
+            }
+            String e = ext == null || ext.length() == 0 ? "mp4" : ext;
+            synchronized (list) {
+                for (int i = 0; i < list.size(); i++) {
+                    if (list.get(i).url.equals(url)) {
+                        return;
+                    }
+                }
+                M m = new M(url, h, e, audio);
+                list.add(0, m);
+                while (list.size() > MAX) {
+                    list.remove(list.size() - 1);
+                }
+                resolveSize(m);
+            }
+        } catch (Throwable t) {
+        }
+    }
+
     private static final java.util.concurrent.ExecutorService SZ =
             java.util.concurrent.Executors.newFixedThreadPool(2);
 

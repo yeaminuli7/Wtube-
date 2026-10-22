@@ -3050,6 +3050,26 @@ public class MainActivity extends Activity {
             if (navBar != null) {
                 navBar.setVisibility(View.GONE);
             }
+            // yt-dlp-স্টাইল এক্সট্র্যাকশন আগে চালাই (TikTok/Facebook/Instagram):
+            // পেজের ভেতরের JSON থেকেই সরাসরি স্ট্রিম-লিংক বের হয়, তাই ভিডিওটা
+            // ব্রাউজারে লোড হওয়ার অপেক্ষা করতে হয় না
+            if (Extractors.canHandle(u)) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            java.util.ArrayList<Extractors.Hit> hits = Extractors.extract(u);
+                            for (int i = 0; i < hits.size(); i++) {
+                                Extractors.Hit h = hits.get(i);
+                                MediaSniffer.offer(h.url, h.ext, h.audio, null);
+                            }
+                            StreamStore.note("extract " + hits.size() + " hits "
+                                    + Extractors.host(u));
+                        } catch (Throwable t) {
+                        }
+                    }
+                }).start();
+            }
             // ইউটিউবে ডাউনলোড চাপলে যেমন অপশন-শিট আসে, এখানেও তাই — পেজ
             // লোড হওয়ার সাথে সাথেই খুলে যায় এবং ফাইল পেলেই সারি যোগ হয়
             MediaOptionsSheet.show(this,

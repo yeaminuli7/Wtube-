@@ -207,6 +207,16 @@ public class PlayerActivity extends Activity {
      * মনে রাখি, নাহলে দুই আঙুল স্থির রেখে ৫০০ms থাকলেই 2x হয়ে যেত।
      */
     private boolean multiTouch = false;
+    /**
+     * জুম করা থাকলে এক-আঙুল টানার অক্ষ (০ = স্থির হয়নি, ১ = উপরে-নিচে →
+     * ভলিউম/ব্রাইটনেস, ২ = বাঁয়ে-ডানে → ভিডিও সরানো)। একবার ঠিক হলে
+     * পুরো জেসচার জুড়ে আর বদলায় না — নাহলে মাঝপথে ভিডিও সরে যেত।
+     */
+    private int zoomAxis = 0;
+    /** দুই-আঙুল টানার শেষ বিন্দু (জুম+সরানো একসাথে)। */
+    private float lastFocusX = 0f, lastFocusY = 0f;
+    /** এই পিঞ্চ-জেসচারে দুই-আঙুল টেনে জমানো সরানোর পরিমাণ। */
+    private float focusPanX = 0f, focusPanY = 0f;
     private boolean loopOn = false;
     private final java.util.List<Resolver.Rel> relList =
             new java.util.ArrayList<>();
@@ -1308,18 +1318,42 @@ public class PlayerActivity extends Activity {
                 if (player == null || isInPictureInPictureMode() || e1 == null) {
                     return false;
                 }
-                // জুম-ইন করা থাকলে এক-আঙুল টানা = ভিডিও সরানো (ব্রাইটনেস/ভলিউম নয়)
+                /*
+                 * জুম করা থাকলে অক্ষ দেখে সিদ্ধান্ত নিই (আগে সব ড্র্যাগই ভিডিও
+                 * সরাত, তাই আওয়াজ বাড়াতে উপরে টানলে ভিডিও সরে যেত):
+                 *   উপরে-নিচে  → ব্রাইটনেস / ভলিউম (ভিডিও স্থির)
+                 *   বাঁয়ে-ডানে → ভিডিও সরানো
+                 *   দুই আঙুল   → সব দিকে সরানো (scale listener দেখে)
+                 * সিদ্ধান্ত একবারই, ১২dp নড়ার পর — মাঝপথে বদলায় না।
+                 */
                 if (zoom > 1.001f) {
                     if (e2.getPointerCount() > 1) {
                         return false;
                     }
-                    panX -= dx;
-                    panY -= dy;
-                    applyZoom();
-                    return true;
+                    if (zoomAxis == 0
+                            && (Math.abs(e2.getY() - e1.getY()) > 12 * u
+                                || Math.abs(e2.getX() - e1.getX()) > 12 * u)) {
+                        zoomAxis = Math.abs(dy) > Math.abs(dx) ? 1 : 2;
+                    }
+                    if (zoomAxis == 2) {
+                        panX -= dx;
+                        panY -= dy;
+                        applyZoom();
+                        return true;
+                    }
+                    if (zoomAxis == 0) {
+                        return true; // এখনো বোঝা যায়নি — কিছুই করি না
+                    }
+                    // zoomAxis == 1: নিচের স্বাভাবিক ভলিউম/ব্রাইটনেস পথে যাই
                 }
                 if (!verticalGesture && Math.abs(dy) > Math.abs(dx)
                         && Math.abs(e2.getY() - e1.getY()) > 12 * u) {
+                    verticalGesture = true;
+                    downX = e1.getX();
+                    downY = e1.getY();
+                }
+                // জুম থাকলে অক্ষ-লক আগেই ঠিক হয়ে গেছে — verticalGesture ধরে নিই
+                if (zoom > 1.001f && zoomAxis == 1 && !verticalGesture) {
                     verticalGesture = true;
                     downX = e1.getX();
                     downY = e1.getY();
@@ -1364,6 +1398,10 @@ public class PlayerActivity extends Activity {
                     public boolean onScaleBegin(ScaleGestureDetector det) {
                         zoomStartX = panX;
                         zoomStartY = panY;
+                        lastFocusX = det.getFocusX();
+                        lastFocusY = det.getFocusY();
+                        focusPanX = 0f;
+                        focusPanY = 0f;
                         return true;
                     }
 
@@ -1376,16 +1414,31 @@ public class PlayerActivity extends Activity {
                         if (!Float.isFinite(f) || f <= 0f) {
                             return true;
                         }
+                        float fx = det.getFocusX();
+                        float fy = det.getFocusY();
+                        // দুই আঙুলের কেন্দ্র সরে গেলে ভিডিওটাও সরাই — জুম
+                        // থাকলেও সব দিকে সরানো সম্ভব থাকে। আলাদা ভেরিয়েবলে
+                        // জমাই, কারণ নিচের সূত্রটি panX/panY পুরোটা নতুন করে বসায়।
+                        if (zoom > ZOOM_MIN + 0.001f) {
+                            focusPanX += fx - lastFocusX;
+                            focusPanY += fy - lastFocusY;
+                        }
+                        lastFocusX = fx;
+                        lastFocusY = fy;
                         float prev = zoom;
                         zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * f));
                         if (zoom <= ZOOM_MIN + 0.001f) {
                             panX = 0f;
                             panY = 0f;
+                            focusPanX = 0f;
+                            focusPanY = 0f;
                         }
                         // আঙুলের মাঝখান বিন্দুটিকে স্থির রাখা (যাতে জুম "লাফ" না দেয়)
                         float zf = prev > 0.001f ? zoom / prev : 1f;
-                        panX = zoomStartX * zf + (det.getFocusX() - surfaceBox.getWidth() / 2f) * (1f - zf);
-                        panY = zoomStartY * zf + (det.getFocusY() - surfaceBox.getHeight() / 2f) * (1f - zf);
+                        panX = zoomStartX * zf
+                                + (fx - surfaceBox.getWidth() / 2f) * (1f - zf) + focusPanX;
+                        panY = zoomStartY * zf
+                                + (fy - surfaceBox.getHeight() / 2f) * (1f - zf) + focusPanY;
                         applyZoom();
                         showHud("Zoom " + Math.round(zoom * 100) + "%");
                         return true;
@@ -1396,6 +1449,7 @@ public class PlayerActivity extends Activity {
             public boolean onTouch(View v, MotionEvent e) {
                 if (e.getAction() == MotionEvent.ACTION_DOWN) {
                     multiTouch = false;
+                    zoomAxis = 0;
                 } else if (e.getAction() == MotionEvent.ACTION_POINTER_DOWN) {
                     // দ্বিতীয় আঙুল = পিঞ্চ; দীর্ঘ-চাপ বাতিল, চলমান boost-ও শেষ
                     multiTouch = true;
