@@ -1725,3 +1725,43 @@ endHoldBoost/hudPinned/multiTouch/onLongPress/"2x speed"/"release to resume"
 + boost শুরু + boost শেষ); আগের `cycleSpeed()`/স্পিড-ডায়ালগ অপরিবর্তিত।
 v2.11-এর ভলিউম ও v2.12-এর সার্চ-লিংক কোড অটুট।
 সেল্টেস্ট ১৩৫/১৩৫।
+
+---
+
+## v2.14 — ভিডিও ধীরে লোড: থ্রটলিং শনাক্ত + অ-থ্রটল সোর্স (vc 90→91)
+
+**ইউজার-রিপোর্ট:** "net speed is working slow but I have internet speed fast
+and video is loading slowly"।
+
+**রুট-কজ (গবেষণা-সমর্থিত):** ২০২১ থেকে YouTube গোয়গলভিডিও URL-এ `n`
+প্যারামিটার দেয়। সেটি `base.js`-এর JS অ্যালগরিদম দিয়ে রূপান্তর করতে হয়;
+না করলে সার্ভার **~৫০ kB/s**-এ থ্রটল করে (≈০.৪ Mbps)। yt-dlp/youtube-dl-এর
+ডকুমেন্টেশন ও ইস্যুতে এটি সরাসরি নথিভুক্ত। আমাদের কোডে `n`/`sig` রূপান্তরের
+কোনো কোডই ছিল না (`grep decipher|nsig|throttl` = শূন্য) — URL যেমন আসে
+তেমনই ExoPlayer-এ যেত। ডিফল্ট কোয়ালিটি ৩৬০p, তাও যদি না চলে, তার মানে
+থ্রাপুট < ১ Mbps — অর্থাৎ ইন্টারনেট দ্রুত হলেও পথটি থ্রটলড।
+
+**যা করা হলো (কখনো খারাপ করতে পারে না এমন ডিজাইন):**
+
+1. **`Resolver.throttledUrl()`** — URL-এ `n=` আছে কিন্তু `ratebypass=yes`
+   নেই → থ্রটল-ঝুঁকি। `nn=abc`-র মতো ভুল-পজিটিভ এড়াতে `startsWith("n=")`
+   ব্যবহার, `#fragment` বাদ, খালি `n=` উপেক্ষা।
+2. **`resolve()` দুই স্তরে:** আগের বডিটি `resolveInner()`; নতুন `resolve()`
+   ফলাফল থ্রটলড হলে **ANDROID ক্লায়েন্ট** থেকে একবার অ-থ্রটল URL খোঁজে।
+   - অ-থ্রটল পাওয়া গেলে সেটিই ব্যবহৃত হয় → বড় গতি-লাভ
+   - না পেলে/ব্যর্থ হলে **আগের ফলাফলই** ফেরত → কোনো রিগ্রেশন নেই
+   - বাড়তি সময় লাগে শুধু থ্রটলড অবস্থায় (সেকেন্ডের ভগ্নাংশ)
+3. **`visitorData` ক্যাশ** (UA+base কী, ২০ মিনিট TTL) — প্রতি ভিডিওতে একটি
+   অতিরিক্ত HTTPS রাউন্ড-ট্রিপ (TCP+TLS সহ) বাঁচে। ফ্যালব্যাক-চেইনে ৪টি
+   পর্যন্ত বাঁচে।
+4. **Diagnostics স্ক্রিনে** এখন `Stream: ok …` / `THROTTLED (n unset) …` দেখায়
+   (Settings → Diagnostics → Share)। এতেই বোঝা যাবে সমস্যাটা সত্যিই থ্রটলিং
+   কি না — আর ভবিষ্যতে ঠিক জায়গায় হাত দেওয়া যাবে।
+
+**যাচাই:** `throttledUrl`-এর **আসল সোর্স-টেক্সট** আলাদা করে javac দিয়ে
+কম্পাইল করে ১১টি কেসে চালানো — **১১/১১** (n+no-bypass=true, bypass=yes=false,
+`nn=`=false, খালি `n=`=false, fragment, no-query, empty)। vc 91 / name 2.14,
+APK 4,892,575 B, VALID, misaligned 0, সার্টিফিকেট v2.05–2.13-এর সাথে মিল।
+dex-এ throttledUrl/resolveInner/lastDiag/"THROTTLED"/"unthrottled ANDROID
+source selected" উপস্থিত; v2.11–v2.13-এর কোড অটুট। সেল্টেস্ট ১৩৫/১৩৫।
+MD5 v2.13 ≠ v2.14 (আকার একই হওয়া কাকতালীয়), dex-এ throttledUrl কেবল 2.14-এ।

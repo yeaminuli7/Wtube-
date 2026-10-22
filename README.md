@@ -56,11 +56,12 @@ Needs Linux + JDK + `curl`/`unzip`/`zip` + `python3`. The script downloads `andr
 ## Download
 
 Prebuilt APKs are on the [Releases page](https://github.com/yeaminuli7/vr/releases) —
-latest is [v2.13](https://github.com/yeaminuli7/vr/releases/tag/v2.13). Each release
+latest is [v2.14](https://github.com/yeaminuli7/vr/releases/tag/v2.14). Each release
 notes page has the direct `.apk` link at the top; open it on your phone and install.
 
 | Release | Version | Highlights |
 | --- | --- | --- |
+| [v2.14](https://github.com/yeaminuli7/vr/releases/tag/v2.14) | 2.14 (vc 91) | Slow-loading fix: detects YouTube's `n`-parameter throttling and switches to an unthrottled source; caches visitorData to cut a round-trip per video |
 | [v2.13](https://github.com/yeaminuli7/vr/releases/tag/v2.13) | 2.13 (vc 90) | Press and hold on the player to play at 2x; release returns to the previous speed |
 | [v2.12](https://github.com/yeaminuli7/vr/releases/tag/v2.12) | 2.12 (vc 89) | Paste a YouTube link into YouTube's search bar and the video opens instead of searching. Ordinary searches unaffected |
 | [v2.11](https://github.com/yeaminuli7/vr/releases/tag/v2.11) | 2.11 (vc 88) | Smooth volume gesture: the drag now accumulates instead of discarding fractions, and fills between the system's integer steps with player gain |

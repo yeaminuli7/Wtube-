@@ -1780,6 +1780,8 @@ public class MainActivity extends Activity {
         }
         return "Wtube v" + vn + "\nUA: "
                 + (StreamStore.sUA.length() > 0 ? StreamStore.sUA : "?")
+                + "\nStream: "
+                + (Resolver.lastDiag.length() > 0 ? Resolver.lastDiag : "?")
                 + "\n\n" + StreamStore.dump();
     }
 

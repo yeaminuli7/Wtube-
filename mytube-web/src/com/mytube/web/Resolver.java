@@ -442,6 +442,8 @@ public class Resolver {
         public final java.util.ArrayList<Cap> caps = new java.util.ArrayList<Cap>();
         public final java.util.ArrayList<Chap> chaps = new java.util.ArrayList<Chap>();
         public long dislikes = -1;
+        /** নির্বাচিত URL-এ n= আছে কিন্তু ratebypass=yes নেই (থ্রটল-ঝুঁকি)। */
+        public boolean nparam = false;
     }
 
     /** ডেসক্রিপশন-টাইমস্ট্যাম্প থেকে পাওয়া চ্যাপ্টার। */
@@ -550,13 +552,75 @@ public class Resolver {
     }
 
     /** visitor_id এন্ডপয়েন্ট থেকে টাটকা visitorData। */
+    // ---- visitorData ক্যাশ ----
+    // প্রতিবার visitor_id আলাদা করে আনলে প্রতিটি ভিডিওতে একটি অতিরিক্ত
+    // HTTPS রাউন্ড-ট্রিপ (TCP+TLS সহ) নষ্ট হয়। মান কয়েক ঘণ্টা স্থির থাকে,
+    // তাই UA+base অনুযায়ী মনে রাখি।
+    private static final java.util.HashMap<String, String> VIS =
+            new java.util.HashMap<String, String>();
+    private static final java.util.HashMap<String, Long> VIS_AT =
+            new java.util.HashMap<String, Long>();
+    private static final long VIS_TTL_MS = 20L * 60L * 1000L;
+
+    /** শেষ সফল রেজলভের সংক্ষিপ্ত বিবরণ (Diagnostics স্ক্রিনে যায়)। */
+    public static volatile String lastDiag = "";
+
+    /**
+     * YouTube স্ট্রিম-URL-এ `n` প্যারামিটার থাকলে এবং `ratebypass=yes` না থাকলে
+     * সার্ভার ডাউনলোড থ্রটল করে (~৫০ kB/s)। আমরা `n` রূপান্তর করি না, তাই এই
+     * ফ্ল্যাগটি সত্য হলে "ইন্টারনেট ফাস্ট কিন্তু ভিডিও স্লো" হওয়ার কারণ এটিই।
+     */
+    public static boolean throttledUrl(String u) {
+        try {
+            if (u == null || u.length() == 0) {
+                return false;
+            }
+            int i = u.indexOf('?');
+            if (i < 0) {
+                return false;
+            }
+            String q = u.substring(i + 1);
+            int h = q.indexOf('#');
+            if (h >= 0) {
+                q = q.substring(0, h);
+            }
+            boolean hasN = false;
+            boolean bypass = false;
+            for (String p : q.split("&")) {
+                if (p.startsWith("n=") && p.length() > 2) {
+                    hasN = true;
+                } else if (p.equals("ratebypass=yes")) {
+                    bypass = true;
+                }
+            }
+            return hasN && !bypass;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static String visitorId(JSONObject ctxBody, String ua, String base, Res r,
                                     String tag) {
+        String ck = ua + "|" + base;
+        try {
+            String got = VIS.get(ck);
+            Long at = VIS_AT.get(ck);
+            if (got != null && got.length() > 0 && at != null
+                    && (System.currentTimeMillis() - at.longValue()) < VIS_TTL_MS) {
+                return got;
+            }
+        } catch (Throwable t) {
+        }
         try {
             JSONObject j = post(base + "visitor_id?prettyPrint=false", ctxBody, ua);
             JSONObject rc = j.optJSONObject("responseContext");
             String v = rc != null ? rc.optString("visitorData", "") : "";
             if (v.length() > 0) {
+                try {
+                    VIS.put(ck, v);
+                    VIS_AT.put(ck, Long.valueOf(System.currentTimeMillis()));
+                } catch (Throwable t) {
+                }
                 return v;
             }
             r.log.append(tag).append(": no visitorData\n");
@@ -586,7 +650,38 @@ public class Resolver {
 
     // ================= রেজলভ-প্রবাহ =================
 
+    /**
+     * পাবলিক এন্ট্রি: প্রথমে স্বাভাবিক রেজলভ, তারপর — যদি নির্বাচিত স্ট্রিম
+     * থ্রটলড হয় — ANDROID ক্লায়েন্ট থেকে অ-থ্রটল URL পাওয়ার একবার চেষ্টা।
+     * এই বাড়তি চেষ্টা কেবল থ্রটলড অবস্থাতেই হয়, আর ব্যর্থ হলে আগের ফলাফলই
+     * ফেরত যায় — তাই এটি কখনো পরিস্থিতি খারাপ করতে পারে না।
+     */
     public static Res resolve(String videoId) {
+        Res r = resolveInner(videoId);
+        try {
+            if (r == null || !r.nparam
+                    || (r.video == null && r.combined == null)) {
+                return r;
+            }
+            StreamStore.note("throttle detected — trying ANDROID source");
+            Res alt = new Res();
+            String reason = tryClassic(alt, videoId, "ANDROID", "20.05.38", "30",
+                    "com.google.android.youtube/20.05.38 (Linux; U; Android 11) gzip",
+                    "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", false, "");
+            if (reason == null && !alt.nparam
+                    && (alt.video != null || alt.combined != null)) {
+                alt.log.append("unthrottled ANDROID source selected\n");
+                lastDiag = "ok (ANDROID fallback) " + lastDiag;
+                StreamStore.note("stream " + lastDiag);
+                return alt;
+            }
+            StreamStore.note("ANDROID fallback kept throttled/absent — keeping original");
+        } catch (Throwable t) {
+        }
+        return r;
+    }
+
+    private static Res resolveInner(String videoId) {
         Res r = new Res();
         String lastReason = "";
 
@@ -681,6 +776,16 @@ public class Resolver {
     }
 
     private static Res finish(Res r) {
+        try {
+            boolean th = throttledUrl(r.video) || throttledUrl(r.combined)
+                    || throttledUrl(r.audio);
+            r.nparam = th;
+            lastDiag = (th ? "THROTTLED (n unset)" : "ok")
+                    + " dual=" + (r.video != null && r.audio != null)
+                    + " single=" + (r.combined != null) + " hls=" + (r.hls.length() > 0);
+            StreamStore.note("stream " + lastDiag);
+        } catch (Throwable t) {
+        }
         java.util.Collections.sort(r.vars, new java.util.Comparator<Var>() {
             public int compare(Var a, Var b) {
                 return b.h - a.h;
