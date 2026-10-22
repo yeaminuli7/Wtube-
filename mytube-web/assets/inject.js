@@ -115,6 +115,7 @@
     } catch (e) { }
   }
   var homeHref = null; // শেষ নন-ওয়াচ পেজ — ফাঁস হলে এখানে ফেরাই
+  var lastOtherLink = null, lastOtherAt = 0; // একই বহিঃ-লিংক বারবার না খুলতে
   var lastClickOpen = 0;
   function report() {
     try { MTApp.nav(location.href); } catch (e) { }
@@ -131,6 +132,16 @@
       if (qv) {
         tryOpen(qv.id, qv.short);
         setTimeout(function () { try { history.back(); } catch (e) { } }, 350);
+        return;
+      }
+      var qo = mtOtherLink(q);
+      if (qo) {
+        // বারবার একই লিংক না খুলি (report() প্রতি ৯০০ms চলে)
+        if (qo !== lastOtherLink || (Date.now() - lastOtherAt) > 5000) {
+          lastOtherLink = qo;
+          lastOtherAt = Date.now();
+          try { MTApp.openLink(qo); } catch (e) { }
+        }
         return;
       }
     }
@@ -185,6 +196,31 @@
     return { id: m[1], short: /\/shorts\//.test(s) };
   }
 
+  /**
+   * পুরো স্ট্রিংটি একটি ইউটিউব-বহির্ভূত http(s) লিংক হলে সেটি, নাহলে null।
+   * এগুলো সার্চ না করে সরাসরি ব্রাউজারে খুলে দেওয়া হয় — পেজটা নিজে যে
+   * ভিডিও-ফাইল টানে, অ্যাপ সেটাই ধরে ডাউনলোডের সুযোগ দেয়।
+   */
+  function mtOtherLink(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s || s.length > 2000) { return null; }
+    if (mtVideoLink(s)) { return null; }          // ইউটিউব ভিডিও — অন্য পথে
+    var m = s.match(/^https?:\/\/([^\/?#\s]+)([^\s]*)$/i);
+    if (!m) { return null; }
+    var host = m[1].toLowerCase().replace(/:\d+$/, '');
+    if (!host || host.indexOf('.') < 0) { return null; }
+    if (/(^|\.)youtube\.com$/.test(host) || host === 'youtu.be'
+        || /(^|\.)youtube-nocookie\.com$/.test(host)
+        || /(^|\.)google\.com$/.test(host)
+        || /(^|\.)googleusercontent\.com$/.test(host)
+        || /(^|\.)gstatic\.com$/.test(host)
+        || /(^|\.)ytimg\.com$/.test(host)
+        || /(^|\.)ggpht\.com$/.test(host)) {
+      return null;                                 // ইউটিউব/গুগল — সার্চই থাকুক
+    }
+    return s;
+  }
+
   /** এটি কি ইউটিউবের সার্চ-ইনপুট? (DOM বদলালেও চলবে — বৈশিষ্ট্য দিয়ে চেনা) */
   function mtIsSearchInput(el) {
     if (!el) { return false; }
@@ -216,11 +252,22 @@
   /** সত্য = আমরা নিয়েছি (সার্চ বন্ধ); মিথ্যা = স্বাভাবিক সার্চ চলুক। */
   function mtTakeSearch(el) {
     var v = mtVideoLink(el && el.value);
-    if (!v) { return false; }
-    try { el.value = ''; } catch (e) { }
-    try { el.blur(); } catch (e) { }
-    mtOpenFromSearch(v.id, v.short);
-    return true;
+    if (v) {
+      try { el.value = ''; } catch (e) { }
+      try { el.blur(); } catch (e) { }
+      mtOpenFromSearch(v.id, v.short);
+      return true;
+    }
+    // ইউটিউবের বাইরের লিংক (TikTok / Instagram / Facebook / যেকোনো সাইট)
+    var o = mtOtherLink(el && el.value);
+    if (o) {
+      try { el.value = ''; } catch (e) { }
+      try { el.blur(); } catch (e) { }
+      window.__mtpause = Date.now() + 5000;
+      try { MTApp.openLink(o); } catch (e) { }
+      return true;
+    }
+    return false;
   }
 
   document.addEventListener('keydown', function (e) {

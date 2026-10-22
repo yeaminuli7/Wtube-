@@ -7,6 +7,19 @@ These tests build a synthetic `m.youtube.com` DOM (signed-in, with the 2026
 "swipeable top tabs" feed layout) and run the **real** `assets/inject.js`
 inside it, then assert which elements end up hidden.
 
+`test5.js` — pasting a **non-YouTube** link into YouTube's search bar
+- TikTok / Instagram / Facebook / X / Vimeo / any site → the page is opened
+  through the bridge, the search is blocked, the input is cleared
+- YouTube and Google hosts are never treated as external (`youtube.com`,
+  `youtu.be`, `accounts.google.com`, `google.com`, `ytimg.com`, `yt3.ggpht.com`,
+  `gstatic.com`), so the video logic in test4.js keeps owning them
+- ordinary text still searches: bare host without a scheme, a URL inside
+  words, a URL with a space, `javascript:` / `data:` / `file:` / `ftp:`
+- the `/results?search_query=<link>` fallback opens the page, while a normal
+  results page does not, and the same link is not opened twice
+- a comment box is never hijacked
+- an older app without `openLink` does not throw
+
 ## Run
 
 ```sh

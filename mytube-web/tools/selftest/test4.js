@@ -105,7 +105,9 @@ console.log('\n[2] shorts flag');
   w.close();
 }
 
-/* ---- 3. ordinary searches must be untouched ---- */
+/* ---- 3. ordinary searches must be untouched ----
+   (a non-YouTube URL is deliberately NOT in this list: it opens the page
+   instead of searching, and is covered by test5.js) */
 console.log('\n[3] normal searches unaffected');
 const searches = [
   'cats playing piano',
@@ -114,7 +116,6 @@ const searches = [
   'watch?v=' + ID,                        // no host -> just text
   'best of ' + ID,                        // id embedded in words
   'https://www.youtube.com/watch?v=SHORT',// too short to be an id
-  'https://example.com/watch?v=' + ID,    // wrong host
   'https://www.youtube.com/results?search_query=x',
   '',
   '   ',

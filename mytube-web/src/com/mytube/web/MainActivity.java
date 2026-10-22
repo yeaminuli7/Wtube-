@@ -306,6 +306,14 @@ public class MainActivity extends Activity {
                                 // ধরতে পারেনি — /results?...search_query=<লিংক>
                                 vid = vidFromPastedLink(u);
                             }
+                            if (vid == null) {
+                                // ইউটিউবের বাইরের লিংক — সার্চ না করে পেজটা খুলি
+                                String ext = otherLinkFromPastedLink(u);
+                                if (ext != null) {
+                                    openExternalPage(ext);
+                                    return true;
+                                }
+                            }
                             if (vid != null) {
                                 if (vid.equals(sSuppressVideo)) {
                                     return false; // ফলব্যাক-পেজ — ওয়েবেই খুলুক
@@ -373,6 +381,14 @@ public class MainActivity extends Activity {
                                 new ByteArrayInputStream(new byte[0]));
                     }
                     StreamStore.capture(u);
+                    if (MediaSniffer.capture(u) && web != null) {
+                        web.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                onMediaFound();
+                            }
+                        });
+                    }
                 } catch (Throwable t) {
                 }
                 return null;
@@ -1850,6 +1866,49 @@ public class MainActivity extends Activity {
         return null;
     }
 
+    /**
+     * `/results?search_query=<ইউটিউব-বহির্ভূত লিংক>` হলে ওই লিংকটি ফেরত দিই।
+     * ইউটিউব-হোস্ট হলে null (সেগুলো অন্য পথে সামলানো হয়)।
+     */
+    private static String otherLinkFromPastedLink(Uri u) {
+        try {
+            String path = u.getPath() == null ? "" : u.getPath();
+            if (!path.startsWith("/results")) {
+                return null;
+            }
+            String q = u.getQueryParameter("search_query");
+            if (q == null) {
+                return null;
+            }
+            q = q.trim();
+            if (q.startsWith("https%3A") || q.startsWith("http%3A")) {
+                try {
+                    q = Uri.decode(q);
+                } catch (Throwable t2) {
+                }
+            }
+            if (q.length() == 0 || q.length() > 2000) {
+                return null;
+            }
+            if (!q.startsWith("http://") && !q.startsWith("https://")) {
+                return null;
+            }
+            Uri lu = Uri.parse(q);
+            String host = lu.getHost() == null ? "" : lu.getHost().toLowerCase();
+            if (host.length() == 0 || host.indexOf('.') < 0) {
+                return null;
+            }
+            if (host.endsWith("youtube.com") || host.equals("youtu.be")
+                    || host.endsWith("google.com") || host.endsWith("googleusercontent.com")
+                    || host.endsWith("gstatic.com") || host.endsWith("ytimg.com")) {
+                return null;
+            }
+            return q;
+        } catch (Throwable t) {
+        }
+        return null;
+    }
+
     private static String vidFromUrl(Uri u) {
         try {
             String host = u.getHost() == null ? "" : u.getHost();
@@ -2965,6 +3024,94 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * ইউটিউবের বাইরের লিংক ব্রাউজারে খুলুন এবং মিডিয়া-স্নিফার চালু করুন।
+     * "no media" হলে কিছুই দেখানো হয় না — শুধু পেজটা খোলে।
+     */
+    private void openExternalPage(String url) {
+        try {
+            final String u = url.trim();
+            if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                return;
+            }
+            MediaSniffer.arm();
+            mediaSheetShown = false;
+            if (web != null) {
+                web.loadUrl(u);
+            }
+            if (navBar != null) {
+                navBar.setVisibility(View.GONE);
+            }
+        } catch (Throwable t) {
+        }
+    }
+
+    /** এই পেজ-সেশনে মিডিয়া-শিট একবারই — বারবার বিরক্ত করি না। */
+    private boolean mediaSheetShown = false;
+
+    /**
+     * স্নিফার একটি মিডিয়া-ফাইল পেয়েছে। ১.২ সেকেন্ড অপেক্ষা করি যাতে একই
+     * পেজের একাধিক ফাইল একসাথে দেখা যায়, তারপর একটি ছোট তালিকা দেখাই।
+     */
+    private void onMediaFound() {
+        if (mediaSheetShown) {
+            return;
+        }
+        mediaSheetShown = true;
+        final View post = web != null ? web : this.getWindow().getDecorView();
+        post.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    showMediaSheet();
+                } catch (Throwable t) {
+                }
+            }
+        }, 1200);
+    }
+
+    /** পাওয়া মিডিয়া-ফাইলগুলোর তালিকা — ট্যাপে ডাউনলোড শুরু। */
+    private void showMediaSheet() {
+        final java.util.ArrayList<MediaSniffer.M> ms = MediaSniffer.list();
+        if (ms.isEmpty() || isFinishing()) {
+            return;
+        }
+        String[] labels = new String[ms.size()];
+        for (int i = 0; i < ms.size(); i++) {
+            labels[i] = ms.get(i).label();
+        }
+        String title = "Media found";
+        try {
+            if (web != null && web.getTitle() != null && web.getTitle().length() > 0) {
+                title = web.getTitle();
+                if (title.length() > 60) {
+                    title = title.substring(0, 60);
+                }
+            }
+        } catch (Throwable t) {
+        }
+        final String pageTitle = title;
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(labels, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        try {
+                            MediaSniffer.M m = ms.get(w);
+                            startService(new Intent(MainActivity.this, DownloadService.class)
+                                    .setAction(DownloadService.ACT_START)
+                                    .putExtra(DownloadService.EXTRA_TITLE, pageTitle)
+                                    .putExtra(DownloadService.EXTRA_DIRECT, m.url)
+                                    .putExtra(DownloadService.EXTRA_DEXT, m.ext));
+                            DownloadsSheet.show(MainActivity.this);
+                        } catch (Throwable t) {
+                        }
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
     private String readAsset(String name) {
         try {
             InputStream in = getAssets().open(name);
@@ -2994,6 +3141,27 @@ public class MainActivity extends Activity {
                     try {
                         android.widget.Toast.makeText(MainActivity.this, msg,
                                 android.widget.Toast.LENGTH_LONG).show();
+                    } catch (Throwable t) {
+                    }
+                }
+            });
+        }
+
+        /**
+         * সার্চ-বারে ইউটিউবের বাইরের লিংক পেস্ট করা হয়েছে — পেজটা খুলে দিই
+         * এবং মিডিয়া-স্নিফার চালু করি। ফাইল পেলে ডাউনলোড-শিট আসবে,
+         * না পেলে কিছুই হবে না (ব্যবহারকারী শুধু পেজটা দেখবেন)।
+         */
+        @JavascriptInterface
+        public void openLink(final String url) {
+            if (url == null || url.length() == 0) {
+                return;
+            }
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        openExternalPage(url);
                     } catch (Throwable t) {
                     }
                 }
@@ -3063,6 +3231,9 @@ public class MainActivity extends Activity {
         public void nav(String url) {
             if (url != null && url.contains("youtube.com")) {
                 lastUrl = url;
+                // ইউটিউবে ফিরে এলে বহিঃ-পেজের স্নিফিং বন্ধ
+                MediaSniffer.disarm();
+                mediaSheetShown = false;
             }
         }
 

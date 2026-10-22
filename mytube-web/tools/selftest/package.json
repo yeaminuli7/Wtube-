@@ -4,7 +4,7 @@
   "private": true,
   "description": "Headless DOM self-tests for assets/inject.js (Wtube navigation hiding)",
   "scripts": {
-    "test": "node test.js && node test2.js && node test3.js && node test4.js"
+    "test": "node test.js && node test2.js && node test3.js && node test4.js && node test5.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.3"

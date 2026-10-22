@@ -49,6 +49,7 @@ Published builds live on the
 
 | Release | Version | Notes |
 | --- | --- | --- |
+| [v2.16](https://github.com/yeaminuli7/vr/releases/tag/v2.16) | 2.16 (vc 93) | Paste a TikTok/Instagram/Facebook (or any) link into the search bar: the page opens and, if it exposes a media file, a download sheet appears |
 | [v2.15](https://github.com/yeaminuli7/vr/releases/tag/v2.15) | 2.15 (vc 92) | Downloads show time remaining alongside the existing percentage and speed, in both the app and the notification |
 | [v2.14](https://github.com/yeaminuli7/vr/releases/tag/v2.14) | 2.14 (vc 91) | Slow-loading fix: detects YouTube's `n`-parameter throttling and switches to an unthrottled source; caches visitorData to cut a round-trip per video |
 | [v2.13](https://github.com/yeaminuli7/vr/releases/tag/v2.13) | 2.13 (vc 90) | Press and hold on the player to play at 2x; release returns to the previous speed |

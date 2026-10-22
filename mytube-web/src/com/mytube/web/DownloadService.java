@@ -55,6 +55,8 @@ public class DownloadService extends Service {
     /** আপলোডার-চ্যানেলের নাম (মেটাডেটার জন্য; না থাকলে ফাঁকা) */
     public static final String EXTRA_CH = "chn";
     public static final String EXTRA_DIRECT = "direct"; // সরাসরি এক-ফাইল URL
+    /** সরাসরি ডাউনলোডের ফাইল-এক্সটেনশন (mp4/m4a/webm/mp3...) — না দিলে mp4। */
+    public static final String EXTRA_DEXT = "dext";
     public static final String EXTRA_MP3 = "mp3"; // int: বিটরেট (128/192/320)
     public static final String EXTRA_SRT = "srt"; // ক্যাপশন baseUrl
     public static final String EXTRA_JID = "jid"; // ক্যানসেলের জন্য জব-স্লট
@@ -80,6 +82,7 @@ public class DownloadService extends Service {
         String vid; // ইউটিউব-ভিডিও-আইডি
         String ch;  // আপলোডার-চ্যানেল
         String direct;
+    String dext;
         String srt;
         int mp3;
         int slot;
@@ -157,6 +160,7 @@ public class DownloadService extends Service {
         j.vid = i.getStringExtra(EXTRA_VID);
         j.ch = i.getStringExtra(EXTRA_CH);
         j.direct = i.getStringExtra(EXTRA_DIRECT);
+        j.dext = i.getStringExtra(EXTRA_DEXT);
         j.srt = i.getStringExtra(EXTRA_SRT);
         j.mp3 = i.getIntExtra(EXTRA_MP3, 0);
         main.post(new Runnable() {
@@ -396,12 +400,14 @@ public class DownloadService extends Service {
             } else if (j.mp3 > 0 && j.a != null && j.a.length() > 0) {
                 downloadMp3(j, dir);
             } else if (j.direct != null && j.direct.length() > 0) {
+                String ext = j.dext != null && j.dext.length() > 0 ? j.dext : "mp4";
+                String mime = MediaSniffer.mimeOf(ext);
                 File out = new File(dir, "s.part");
                 parFetch(j.direct, out, j, 0);
                 if (j.cancel) {
                     return;
                 }
-                savePublic(j, out, safeName(j.title, "video") + ".mp4", "video/mp4");
+                savePublic(j, out, safeName(j.title, "media") + "." + ext, mime);
             } else if (j.v != null && j.v.length() > 0 && j.a != null && j.a.length() > 0) {
                 downloadMerged(j, dir);
             } else if (j.v != null && j.v.length() > 0) {
