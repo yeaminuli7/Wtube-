@@ -3053,6 +3053,7 @@ public class MainActivity extends Activity {
             // yt-dlp-স্টাইল এক্সট্র্যাকশন আগে চালাই (TikTok/Facebook/Instagram):
             // পেজের ভেতরের JSON থেকেই সরাসরি স্ট্রিম-লিংক বের হয়, তাই ভিডিওটা
             // ব্রাউজারে লোড হওয়ার অপেক্ষা করতে হয় না
+            final boolean isDirect = Extractors.directExt(u) != null;
             if (Extractors.canHandle(u)) {
                 new Thread(new Runnable() {
                     @Override
@@ -3100,7 +3101,9 @@ public class MainActivity extends Activity {
                             } catch (Throwable t) {
                             }
                         }
-                    });
+                    },
+                    // সত্যি কথাটাই দেখাই: সরাসরি ফাইল-লিংক = resolve, নাহলে scan
+                    isDirect ? "Preparing download..." : "Resolving link...");
         } catch (Throwable t) {
         }
     }

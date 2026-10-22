@@ -1934,3 +1934,54 @@ TikTok দুই পথ + bitrateInfo + HD/SD লেবেল, Facebook দু�
 **যাচাই (সামগ্রিক):** vc 95 / name 2.18, APK 4,904,863 B, VALID, misaligned 0,
 সার্টিফিকেট অপরিবর্তিত, MD5 v2.17 থেকে আলাদা, সেল্টেস্ট ২১৬/২১৬,
 v2.11–v2.17-এর সব ফিচার dex-এ অটুট।
+
+---
+
+## v2.19 — yt-dlp প্রশ্নের সত্য উত্তর + "স্ক্যান" বাদ (vc 95→96)
+
+**ইউজার-প্রশ্ন:** "এখানে মিডিয়া স্ক্যান করতেছে কেন? যে লিংক পেস্ট হবে সেটি তো
+একটি ভিডিও লিংক — yt-dlp-এর পোর্টেবল ভার্সন ব্যবহার করতে পারো না?"
+
+### yt-dlp: প্রমাণসহ উত্তর
+
+সন্দেহ দূর করতে আসল প্যাকেজটা নামিয়ে দেখা হলো:
+
+    pip download yt-dlp --no-deps
+    -> yt_dlp-2026.10.21-py3-none-any.whl
+       1059 files, 10.6 MB, pure Python (wheel tag: py3-none-any)
+
+অর্থাৎ yt-dlp একটি **পাইথন প্রোগ্রাম**, কোনো নেটিভ বাইনারি নয়। "পোর্টেবল
+ভার্সন" (`yt-dlp_linux_aarch64`) আসলে PyInstaller দিয়ে বানানো — ভেতরে
+CPython বাঁধা, কিন্তু সেটি **glibc**-র বিরুদ্ধে লিংক করা। Android-এ libc হলো
+**bionic**, glibc নয় — তাই ওই বাইনারি Android-এ চলবেই না (exec ব্যর্থ)।
+Android-এ yt-dlp চালাতে হলে দরকার CPython-এর Android বিল্ড (Chaquopy /
+python-for-android / youtubedl-android AAR): Gradle লাগে, APK ~৪০ MB বাড়ে,
+আর এই প্রজেক্ট Gradle ছাড়া হাতে-লেখা javac/d8 পাইপলাইনে বিল্ড হয়।
+তাই yt-dlp নিজে নয়, **yt-dlp-এর পদ্ধতি** — যা আগেই করা হয়েছে।
+
+### আসল অভিযোগের সমাধান: "স্ক্যান" কেন?
+
+ব্যবহারকারী ঠিকই ধরেছেন — ভিডিও-লিংকে "Searching for media..." দেখানো
+বেমানান। তিনটি পরিবর্তন:
+
+1. **`directExt()`** — পেস্ট করা লিংকটাই যদি ভিডিও-ফাইল হয় (`....mp4`,
+   `.m4a`, `.webm` …), কোনো এক্সট্র্যাকশন/স্ক্যানই হয় না; সাথে সাথে
+   এক সারি আসে, লেখা **"Preparing download..."**।
+2. **`parseGeneric()`** — যেকোনো সাইটের জন্য: `og:video`,
+   `og:video:secure_url`, `og:video:url`, `twitter:player:stream`,
+   JSON-LD `contentUrl`, `<video src>`, `<source src>`। সাইটভিত্তিক কোড
+   ছাড়াই "যেকোনো প্ল্যাটফর্ম" অনেকটাই সত্যি হলো।
+3. **`canHandle()`** এখন ইউটিউব বাদে **সব** http(s) লিংকে true — ফলে
+   এক্সট্র্যাকশন আগে চলে, পেজ-স্ক্যান শুধু ফলব্যাক। শিটে লেখা এখন
+   **"Resolving link..."** (স্ক্যান নয়)।
+
+ইউটিউবের পথ অটুট — `canHandle()` ওখানে false।
+
+**যাচাই:** `ExtractorsTest` — **৬৫/৬৫** (আগের ৪২ + নতুন ২৩: directExt-এর
+৯টি কেস, og:video ৩ রকম, twitter:player:stream, `<video>`/`<source>`,
+JSON-LD, `&amp;` ডিকোড, খালি/null, এবং canHandle-এ সব সাইট true কিন্তু
+ইউটিউব false)। সেল্টেস্ট ২১৬/২১৬। vc 96 / name 2.19, APK 4,904,863 B, VALID,
+misaligned 0, সার্টিফিকেট অপরিবর্তিত, MD5 ভিন্ন।
+
+**নোট:** `contentUrl` dex-এ ছোট হাতের অক্ষরে থাকে (কেস-নিরপেক্ষ অনুসন্ধান),
+তাই `strings | grep contentUrl` = 0 — ফাংশন ঠিকই কাজ করে (টেস্টে প্রমাণিত)।

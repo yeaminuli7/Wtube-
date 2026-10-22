@@ -30,7 +30,7 @@ public class ExtractorsTest {
         ok(Extractors.canHandle("https://fb.watch/abc/"), "fb.watch handled");
         ok(Extractors.canHandle("https://www.instagram.com/reel/X/"), "instagram handled");
         ok(!Extractors.canHandle("https://www.youtube.com/watch?v=x"), "youtube NOT handled");
-        ok(!Extractors.canHandle("https://example.com/x.mp4"), "generic NOT handled");
+        ok(Extractors.canHandle("https://example.com/x.mp4"), "generic site now handled (v2.19)");
 
         // ---------- TikTok: simple page ----------
         String tik = "{\"itemStruct\":{\"video\":{"
@@ -94,6 +94,53 @@ public class ExtractorsTest {
         // ---------- audio ext ----------
         ArrayList<Extractors.Hit> au = Extractors.parseFacebook("\"playable_url\":\"https:\\/\\/x.com\\/a.m4a\"");
         ok(au.size() == 1 && au.get(0).audio && au.get(0).ext.equals("m4a"), "m4a flagged audio");
+
+
+        // ---------- direct media links: no extraction at all ----------
+        ok("mp4".equals(Extractors.directExt("https://cdn.x.com/a/b.mp4")), "directExt mp4");
+        ok("mp4".equals(Extractors.directExt("https://cdn.x.com/a/b.MP4")), "directExt uppercase");
+        ok("mp4".equals(Extractors.directExt("https://cdn.x.com/b.mp4?token=1&x=2")), "directExt with query");
+        ok("mp4".equals(Extractors.directExt("https://cdn.x.com/b.mp4#t=10")), "directExt with frag");
+        ok("m4a".equals(Extractors.directExt("https://cdn.x.com/song.m4a")), "directExt m4a");
+        ok("webm".equals(Extractors.directExt("https://cdn.x.com/v.webm")), "directExt webm");
+        ok(Extractors.directExt("https://www.tiktok.com/@u/video/731") == null, "page is not direct");
+        ok(Extractors.directExt("https://example.com/page") == null, "html is not direct");
+        ok(Extractors.directExt(null) == null, "null safe");
+
+        // ---------- generic extractor (any site) ----------
+        String og = "<html><head>"
+            + "<meta property=\"og:video\" content=\"https://cdn.site.com/v/clip.mp4\">"
+            + "<meta name=\"twitter:player:stream\" content=\"https://cdn.site.com/v/tw.mp4\">"
+            + "</head><body></body></html>";
+        ArrayList<Extractors.Hit> g = Extractors.parseGeneric(og);
+        ok(has(g, "clip.mp4"), "og:video found");
+        ok(has(g, "tw.mp4"), "twitter:player:stream found");
+
+        String ogSecure = "<meta content=\"https://cdn.site.com/hd.mp4\" property=\"og:video:secure_url\">";
+        ok(has(Extractors.parseGeneric(ogSecure), "hd.mp4"), "og:video:secure_url (reversed attrs)");
+
+        String vid = "<video controls src=\"https://cdn.site.com/plain.mp4\"></video>"
+                   + "<video><source src=\"https://cdn.site.com/src.mp4\"></video>";
+        ArrayList<Extractors.Hit> gv = Extractors.parseGeneric(vid);
+        ok(has(gv, "plain.mp4"), "<video src> found");
+        ok(has(gv, "src.mp4"), "<source src> found");
+
+        String ld = "{\"@type\":\"VideoObject\",\"contentUrl\":\"https://cdn.site.com/ld.mp4\"}";
+        ok(has(Extractors.parseGeneric(ld), "ld.mp4"), "JSON-LD contentUrl found");
+
+        String ampUrl = "<meta property=\"og:video\" content=\"https://cdn.site.com/a.mp4?x=1&amp;y=2\">";
+        ArrayList<Extractors.Hit> ga = Extractors.parseGeneric(ampUrl);
+        ok(ga.size() == 1 && ga.get(0).url.endsWith("x=1&y=2"), "&amp; decoded");
+
+        ok(Extractors.parseGeneric("<html>nothing at all</html>").isEmpty(), "generic: empty when absent");
+        ok(Extractors.parseGeneric(null).isEmpty(), "generic: null safe");
+
+        // ---------- canHandle now covers any site but never YouTube ----------
+        ok(Extractors.canHandle("https://random-site.example/page"), "generic site handled");
+        ok(Extractors.canHandle("https://vimeo.com/123"), "vimeo handled");
+        ok(Extractors.canHandle("https://x.com/u/status/1"), "x handled");
+        ok(!Extractors.canHandle("https://www.youtube.com/watch?v=x"), "youtube still NOT handled");
+        ok(!Extractors.canHandle("https://youtu.be/x"), "youtu.be still NOT handled");
 
         System.out.println(pass + " passed, " + fail + " failed");
         System.exit(fail > 0 ? 1 : 0);

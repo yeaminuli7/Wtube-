@@ -49,16 +49,187 @@ public final class Extractors {
         if (h.length() == 0) {
             return false;
         }
-        return h.endsWith("tiktok.com")
-                || h.equals("fb.watch") || h.endsWith("facebook.com")
-                || h.endsWith("fb.com") || h.endsWith("instagram.com")
-                || h.endsWith("instagr.am");
+        if (h.endsWith("youtube.com") || h.equals("youtu.be")
+                || h.endsWith("ytimg.com") || h.endsWith("ggpht.com")) {
+            return false; // ইউটিউবের নিজের পথ আলাদা
+        }
+        return true;
+    }
+
+    /**
+     * দেওয়া লিংকটি কি সত্যিই একটি ভিডিও/অডিও ফাইল? (যেমন পেস্ট করা
+     * `.../video.mp4`) — তাহলে কোনো এক্সট্র্যাকশনই লাগে না, সোজা ডাউনলোড।
+     */
+    public static String directExt(String url) {
+        try {
+            String path = url == null ? "" : url.toLowerCase().trim();
+            int q = path.indexOf('?');
+            if (q >= 0) {
+                path = path.substring(0, q);
+            }
+            int hash = path.indexOf('#');
+            if (hash >= 0) {
+                path = path.substring(0, hash);
+            }
+            String[] exts = {"mp4", "m4v", "mov", "mkv", "webm", "m4a", "mp3", "ogg", "opus", "aac"};
+            for (int i = 0; i < exts.length; i++) {
+                if (path.endsWith("." + exts[i])) {
+                    return exts[i];
+                }
+            }
+        } catch (Throwable t) {
+        }
+        return null;
+    }
+
+    /**
+     * সাধারণ সাইটের জন্য: পেজের হেডারে থাকা `og:video` / `twitter:player:stream`
+     * এবং HTML5 `&lt;video&gt;` / `&lt;source&gt;` ঠিকানা। এটাই বেশিরভাগ সাইটে
+     * কাজ করে — সাইটভিত্তিক কোড ছাড়াই।
+     */
+    static ArrayList<Hit> parseGeneric(String html) {
+        ArrayList<Hit> out = new ArrayList<Hit>();
+        if (html == null) {
+            return out;
+        }
+        LinkedHashSet<String> seen = new LinkedHashSet<String>();
+        String[] props = {
+            "og:video:secure_url", "og:video:url", "og:video",
+            "twitter:player:stream", "og:audio", "og:audio:secure_url"
+        };
+        for (int i = 0; i < props.length; i++) {
+            String u = metaContent(html, props[i]);
+            if (u != null) {
+                boolean audio = props[i].startsWith("og:audio");
+                addUrl(out, seen, u, audio ? "Audio" : "Video");
+            }
+        }
+        // JSON-LD: "contentUrl":"..."
+        int i = 0;
+        while (i < html.length()) {
+            int k = indexOfCI(html, "\"contenturl\"", i);
+            if (k < 0) {
+                break;
+            }
+            String u = strValue(html, k + 12);
+            if (u != null) {
+                addUrl(out, seen, u, null);
+            }
+            i = k + 12;
+        }
+        // <video src=...> / <source src=...>
+        i = 0;
+        while (i < html.length()) {
+            int k = indexOfCI(html, "<video", i);
+            int s2 = indexOfCI(html, "<source", i);
+            int at = k < 0 ? s2 : (s2 < 0 ? k : Math.min(k, s2));
+            if (at < 0) {
+                break;
+            }
+            int tagEnd = html.indexOf('>', at);
+            if (tagEnd < 0) {
+                break;
+            }
+            String tag = html.substring(at, tagEnd);
+            String u = attrValue(tag, "src");
+            if (u != null && u.startsWith("http")) {
+                addUrl(out, seen, u, null);
+            }
+            i = tagEnd + 1;
+        }
+        return out;
+    }
+
+    /** `<meta property="og:video" content="URL">` — ক্রম যাই হোক। */
+    static String metaContent(String html, String prop) {
+        try {
+            String low = html.toLowerCase();
+            String want = prop.toLowerCase();
+            int i = 0;
+            while (true) {
+                int k = low.indexOf("<meta", i);
+                if (k < 0) {
+                    return null;
+                }
+                int end = low.indexOf('>', k);
+                if (end < 0) {
+                    return null;
+                }
+                String tag = html.substring(k, end);
+                String p = attrValue(tag, "property");
+                if (p == null) {
+                    p = attrValue(tag, "name");
+                }
+                if (p != null && p.trim().equalsIgnoreCase(want)) {
+                    String c = attrValue(tag, "content");
+                    if (c != null && c.trim().length() > 0) {
+                        return c.trim();
+                    }
+                }
+                i = end + 1;
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** ট্যাগের ভেতর থেকে অ্যাট্রিবিউট (একক বা দ্বিগুণ উদ্ধৃতি)। */
+    static String attrValue(String tag, String name) {
+        try {
+            String low = tag.toLowerCase();
+            String key = name.toLowerCase();
+            int i = 0;
+            while (true) {
+                int k = low.indexOf(key, i);
+                if (k < 0) {
+                    return null;
+                }
+                int before = k - 1;
+                boolean boundary = before < 0 || !Character.isLetterOrDigit(low.charAt(before));
+                int j = k + key.length();
+                while (j < low.length() && Character.isWhitespace(low.charAt(j))) {
+                    j++;
+                }
+                if (boundary && j < low.length() && low.charAt(j) == '=') {
+                    j++;
+                    while (j < low.length() && Character.isWhitespace(low.charAt(j))) {
+                        j++;
+                    }
+                    if (j < tag.length() && (tag.charAt(j) == '"' || tag.charAt(j) == '\'')) {
+                        char qq = tag.charAt(j);
+                        int close = tag.indexOf(qq, j + 1);
+                        if (close > j) {
+                            return unescape(tag.substring(j + 1, close)).replace("&amp;", "&");
+                        }
+                        return null;
+                    }
+                    int e = j;
+                    while (e < low.length() && !Character.isWhitespace(low.charAt(e))
+                            && low.charAt(e) != '>') {
+                        e++;
+                    }
+                    String raw = tag.substring(j, e);
+                    return unescape(raw).replace("&amp;", "&");
+                }
+                i = k + key.length();
+            }
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /** হোস্ট-অনুযায়ী এক্সট্র্যাক্টর। ব্যর্থ হলে খালি তালিকা। */
     public static ArrayList<Hit> extract(String url) {
         ArrayList<Hit> out = new ArrayList<Hit>();
         try {
+            // পেস্ট করা লিংকটাই যদি ভিডিও-ফাইল হয় — কোনো স্ক্যান/এক্সট্র্যাকশন নয়
+            String dex = directExt(url);
+            if (dex != null) {
+                boolean audio = dex.equals("m4a") || dex.equals("mp3")
+                        || dex.equals("ogg") || dex.equals("opus") || dex.equals("aac");
+                out.add(new Hit(url.trim(), dex, audio, audio ? "Audio" : "Video"));
+                return out;
+            }
             String h = host(url);
             String html;
             if (h.endsWith("tiktok.com")) {
@@ -69,11 +240,17 @@ public final class Extractors {
                 if (out.isEmpty() && html != null) {
                     out = parseTikTokRehydration(html);
                 }
+                if (out.isEmpty() && html != null) {
+                    out = parseGeneric(html);
+                }
             } else if (h.equals("fb.watch") || h.endsWith("facebook.com")
                     || h.endsWith("fb.com")) {
                 html = get(url);
                 if (html != null) {
                     out = parseFacebook(html);
+                }
+                if (out.isEmpty() && html != null) {
+                    out = parseGeneric(html);
                 }
             } else if (h.endsWith("instagram.com") || h.endsWith("instagr.am")) {
                 html = get(url);
@@ -85,6 +262,15 @@ public final class Extractors {
                     if (html != null) {
                         out = parseInstagram(html);
                     }
+                }
+                if (out.isEmpty() && html != null) {
+                    out = parseGeneric(html); // মেটা-ট্যাগ ফলব্যাক
+                }
+            } else {
+                // যেকোনো অন্য সাইট — og:video / <video> থেকে
+                html = get(url);
+                if (html != null) {
+                    out = parseGeneric(html);
                 }
             }
         } catch (Throwable t) {

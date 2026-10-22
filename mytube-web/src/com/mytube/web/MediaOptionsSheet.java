@@ -62,6 +62,18 @@ public class MediaOptionsSheet {
 
     public static void show(final Activity a, final String pageTitle,
                             final Source src, final OnPick onPick) {
+        show(a, pageTitle, src, onPick, "Resolving link...");
+    }
+
+    /**
+     * @param emptyHint ফাইল না পাওয়া পর্যন্ত দেখানোর লেখা — যেটা সত্যি সেটাই:
+     *                  সরাসরি ভিডিও-লিংকে "Resolving link...",
+     *                  পেজ-স্ক্যানে "Searching for media...".
+     */
+    public static void show(final Activity a, final String pageTitle,
+                            final Source src, final OnPick onPick,
+                            final String emptyHint) {
+        final String hint = emptyHint;
         if (a == null || a.isFinishing()) {
             return;
         }
@@ -134,7 +146,7 @@ public class MediaOptionsSheet {
                     return;
                 }
                 try {
-                    render(a, rows, note, src, onPick);
+                    render(a, rows, note, src, onPick, hint);
                 } catch (Throwable e) {
                 }
                 boolean finished = src.done()
@@ -143,7 +155,7 @@ public class MediaOptionsSheet {
                     poster.postDelayed(tick[0], 600);
                 } else {
                     try {
-                        renderFinal(a, rows, note, src, onPick);
+                        renderFinal(a, rows, note, src, onPick, hint);
                     } catch (Throwable e) {
                     }
                 }
@@ -153,10 +165,10 @@ public class MediaOptionsSheet {
     }
 
     private static void render(Activity a, LinearLayout rows, TextView note,
-                               Source src, OnPick onPick) {
+                               Source src, OnPick onPick, String emptyHint) {
         java.util.ArrayList<MediaSniffer.M> ms = src.list();
         if (rows.getTag() != null && ((Integer) rows.getTag()).intValue() == ms.size()) {
-            note.setText(ms.size() == 0 ? "Searching for media..." : "");
+            note.setText(ms.size() == 0 ? emptyHint : "");
             return; // একই সংখ্যক সারি — আবার আঁকার দরকার নেই
         }
         rows.setTag(Integer.valueOf(ms.size()));
@@ -164,14 +176,14 @@ public class MediaOptionsSheet {
         for (int i = 0; i < ms.size(); i++) {
             rows.addView(row(a, ms.get(i), src, onPick));
         }
-        note.setText(ms.size() == 0 ? "Searching for media..." : "");
+        note.setText(ms.size() == 0 ? emptyHint : "");
     }
 
     private static void renderFinal(Activity a, LinearLayout rows, TextView note,
-                                    Source src, OnPick onPick) {
+                                    Source src, OnPick onPick, String emptyHint) {
         java.util.ArrayList<MediaSniffer.M> ms = src.list();
         rows.setTag(null);
-        render(a, rows, note, src, onPick);
+        render(a, rows, note, src, onPick, emptyHint);
         if (ms.size() == 0) {
             note.setText("No downloadable file found.\n\n"
                     + "This site plays its video in protected pieces, so there is "
