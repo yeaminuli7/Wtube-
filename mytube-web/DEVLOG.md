@@ -2046,3 +2046,44 @@ GitHub-এ রিলিজ অ্যাসেট আপলোড হয় `uplo
 **যাচাই:** সেল্টেস্ট ২১৬/২১৬, ExtractorsTest ৬৫/৬৫, dex-এ
 applyHeaders/BROWSER_UA/EXTRA_REF/extractDone উপস্থিত, `navBar … GONE` = ০,
 সার্টিফিকেট অপরিবর্তিত, MD5 ভিন্ন। vc 97 / name 2.20, APK 4,904,863 B, VALID।
+
+---
+
+## v2.20 (cont.) — GitHub Actions-এ বিল্ড ও রিলিজ (একটিই রিলিজ)
+
+**ইউজার-নির্দেশ:** "just give a One release and build using GitHub action that
+will give us APK in released"।
+
+**আগে কেন সম্ভব হয়নি:** স্যান্ডবক্স থেকে `uploads.github.com`-এ TLS ব্যর্থ
+(`SSL_ERROR_SYSCALL`) — তাই APK কখনো সত্যিকারের অ্যাসেট হিসেবে আপলোড হয়নি।
+GitHub-এর নিজের রানার থেকে তা স্বাভাবিকভাবেই কাজ করে।
+
+**নতুন `.github/workflows/build-apk.yml`:**
+- `ubuntu-latest`-এ **প্রকল্পের নিজের** `tools/build-offline.sh` চলে
+  (Gradle নেই, Android Studio নেই, dl.google.com নেই)। npm + python3 + zip
+  — সব রানারেই আছে।
+- সংস্করণ আসে **`mytube-web/VERSION`** থেকে (`97 2.20`), এক ফাইল বদলালেই
+  পরের বিল্ডের সংস্করণ বদলায়।
+- `softprops/action-gh-release` দিয়ে APK **সত্যিকারের রিলিজ-অ্যাসেট** হিসেবে
+  ওঠে; পরে পুরনো রিলিজগুলো মুছে দেওয়া হয় — তাই **সবসময় একটি রিলিজ**।
+- `GH_TOKEN` দেওয়া হয় (ghfetch.py `gh api` দিয়ে media3/guava আনে)।
+- `permissions: contents: write`; `concurrency` — নতুন পুশ চলমান বিল্ড বাতিল করে।
+- APK আর্টিফ্যাক্ট হিসেবে ১৪ দিন রাখা হয় (রিলিজের বাইরেও)।
+
+**ফল (দুইবার চালিয়ে যাচাই, দ্বিতীয়বার অ্যাকশন ভার্সন বাড়িয়ে):**
+    release list -> 1  (tag v2.20, "Wtube v2.20", latest)
+    assets       -> Wtube_v2.20.apk  4,904,863 B  state=uploaded
+    download URL -> 302 → S3, content-type application/vnd.android.package-archive
+    asset digest -> sha256:198d945f…   (দুই রানে জায়গায় জায়গায় রিপ্লেস, ডুপ্লিকেট নয়)
+    build time   -> 44s / 46s
+
+দুই রানই সব ধাপে ✓; `Build signed APK` ধাপটি `set -e`-সহ `apksigner verify`
+দিয়ে শেষ হয় — অর্থাৎ CI-তেও স্বাক্ষর যাচাই হয়েছে। অ্যাসেটের আকার লোকাল
+বিল্ডের সাথে হুবহু (4,904,863 B); sha ভিন্ন, কারণ zip টাইমস্ট্যাম্প আলাদা।
+
+**অ্যাকশন ভার্সন:** checkout v5, setup-node v5, setup-python v6,
+upload-artifact v5 — পুরনো Node 20 সতর্কবার্তা সরাতে। softprops v2 ও
+upload-artifact v5 এখনো node20 লক্ষ্য করে, সেটি upstream-নির্ভর।
+
+**ডকুমেন্টেশন:** README ও `apk/README.md`-এর ডাউনলোড-লিংক এখন রিলিজ-অ্যাসেটের
+দিকে, কারণ raw-লিংকের চেয়ে এটি GitHub-নির্ধারিত ডাউনলোড।
