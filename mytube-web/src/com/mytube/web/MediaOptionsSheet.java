@@ -149,8 +149,9 @@ public class MediaOptionsSheet {
                     render(a, rows, note, src, onPick, hint);
                 } catch (Throwable e) {
                 }
+                // এক্সট্র্যাক্টর ৬–৮ সেকেন্ড টাইমআউট নিতে পারে, তাই ৩০ সেকেন্ড
                 boolean finished = src.done()
-                        || (System.currentTimeMillis() - start) > 15000L;
+                        || (System.currentTimeMillis() - start) > 30000L;
                 if (!finished) {
                     poster.postDelayed(tick[0], 600);
                 } else {

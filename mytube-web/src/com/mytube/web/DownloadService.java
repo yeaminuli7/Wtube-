@@ -57,6 +57,11 @@ public class DownloadService extends Service {
     public static final String EXTRA_DIRECT = "direct"; // সরাসরি এক-ফাইল URL
     /** সরাসরি ডাউনলোডের ফাইল-এক্সটেনশন (mp4/m4a/webm/mp3...) — না দিলে mp4। */
     public static final String EXTRA_DEXT = "dext";
+    /**
+     * যে পেজ থেকে লিংকটি এসেছে (Referer)। বহিঃ-সাইটের CDN প্রায়ই Referer
+     * ছাড়া 403 দেয়, তাই ডাউনলোড-অনুরোধে এটি পাঠানো হয়।
+     */
+    public static final String EXTRA_REF = "ref";
     public static final String EXTRA_MP3 = "mp3"; // int: বিটরেট (128/192/320)
     public static final String EXTRA_SRT = "srt"; // ক্যাপশন baseUrl
     public static final String EXTRA_JID = "jid"; // ক্যানসেলের জন্য জব-স্লট
@@ -83,6 +88,7 @@ public class DownloadService extends Service {
         String ch;  // আপলোডার-চ্যানেল
         String direct;
     String dext;
+    String ref;
         String srt;
         int mp3;
         int slot;
@@ -161,6 +167,7 @@ public class DownloadService extends Service {
         j.ch = i.getStringExtra(EXTRA_CH);
         j.direct = i.getStringExtra(EXTRA_DIRECT);
         j.dext = i.getStringExtra(EXTRA_DEXT);
+        j.ref = i.getStringExtra(EXTRA_REF);
         j.srt = i.getStringExtra(EXTRA_SRT);
         j.mp3 = i.getIntExtra(EXTRA_MP3, 0);
         main.post(new Runnable() {
@@ -1200,7 +1207,7 @@ public class DownloadService extends Service {
                 }
                 try {
                     HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-                    c.setRequestProperty("User-Agent", UA);
+                    applyHeaders(c, u, j);
                     c.setRequestProperty("Range", "bytes=" + pos + "-" + end);
                     c.setConnectTimeout(15000);
                     c.setReadTimeout(20000);
@@ -1249,6 +1256,45 @@ public class DownloadService extends Service {
         }
     }
 
+    /** সাধারণ ব্রাউজার UA — বহিঃ-সাইটের CDN ইউটিউবের UA-তে 403 দিতে পারে। */
+    private static final String BROWSER_UA =
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36"
+                    + " (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+
+    /**
+     * স্ট্রিম-হোস্ট অনুযায়ী হেডার বসানো।
+     *
+     * <p>googlevideo ইউটিউবের UA চায়; অন্য CDN (TikTok/Facebook/Instagram)
+     * ব্রাউজার UA এবং প্রায়ই Referer ছাড়া 403 দেয়।
+     */
+    private static void applyHeaders(HttpURLConnection c, String u, Job j) {
+        try {
+            String host = "";
+            try {
+                host = new java.net.URL(u).getHost();
+            } catch (Throwable t) {
+            }
+            host = host == null ? "" : host.toLowerCase();
+            boolean yt = host.endsWith("googlevideo.com");
+            c.setRequestProperty("User-Agent", yt ? UA : BROWSER_UA);
+            if (!yt) {
+                String ref = j != null ? j.ref : null;
+                if (ref != null && ref.length() > 0) {
+                    c.setRequestProperty("Referer", ref);
+                    try {
+                        java.net.URL ru = new java.net.URL(ref);
+                        c.setRequestProperty("Origin",
+                                ru.getProtocol() + "://" + ru.getHost());
+                    } catch (Throwable t) {
+                    }
+                }
+                c.setRequestProperty("Accept", "*/*");
+            }
+            c.setInstanceFollowRedirects(true);
+        } catch (Throwable t) {
+        }
+    }
+
     private void fetchOne(String u, File out, Job j) throws Exception {
         while (j.paused && !j.cancel) {
             try {
@@ -1257,7 +1303,7 @@ public class DownloadService extends Service {
             }
         }
         HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
-        c.setRequestProperty("User-Agent", UA);
+        applyHeaders(c, u, j);
         c.setConnectTimeout(15000);
         c.setReadTimeout(20000);
         if (c.getResponseCode() / 100 != 2) {
@@ -1566,7 +1612,7 @@ public class DownloadService extends Service {
             c.setRequestProperty("Range", "bytes=0-0");
             c.setConnectTimeout(5000);
             c.setReadTimeout(5000);
-            c.setRequestProperty("User-Agent", UA);
+            applyHeaders(c, u, null);
             String cr = c.getHeaderField("Content-Range");
             c.disconnect();
             if (cr != null && cr.contains("/")) {

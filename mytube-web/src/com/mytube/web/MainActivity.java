@@ -3047,13 +3047,19 @@ public class MainActivity extends Activity {
                 } catch (Throwable t) {
                 }
             }
+            // নিচের ন্যাভ-বার আর লুকাই না: আগে লুকিয়ে রাখা হতো, আর কোনো কোড
+            // সেটি আবার দেখাত না — ফলে বহিঃ-পেজ খুললে ব্যবহারকারী সেখানেই
+            // আটকে যেতেন। এখন যেকোনো ট্যাব চাপলেই ইউটিউবে ফেরা যায়।
             if (navBar != null) {
-                navBar.setVisibility(View.GONE);
+                navBar.setVisibility(View.VISIBLE);
             }
             // yt-dlp-স্টাইল এক্সট্র্যাকশন আগে চালাই (TikTok/Facebook/Instagram):
             // পেজের ভেতরের JSON থেকেই সরাসরি স্ট্রিম-লিংক বের হয়, তাই ভিডিওটা
             // ব্রাউজারে লোড হওয়ার অপেক্ষা করতে হয় না
             final boolean isDirect = Extractors.directExt(u) != null;
+            final java.util.concurrent.atomic.AtomicBoolean extractDone =
+                    new java.util.concurrent.atomic.AtomicBoolean(!Extractors.canHandle(u));
+            final long startedAt = System.currentTimeMillis();
             if (Extractors.canHandle(u)) {
                 new Thread(new Runnable() {
                     @Override
@@ -3067,6 +3073,8 @@ public class MainActivity extends Activity {
                             StreamStore.note("extract " + hits.size() + " hits "
                                     + Extractors.host(u));
                         } catch (Throwable t) {
+                        } finally {
+                            extractDone.set(true);
                         }
                     }
                 }).start();
@@ -3083,7 +3091,10 @@ public class MainActivity extends Activity {
 
                         @Override
                         public boolean done() {
-                            return false; // নিজের ১৫-সেকেন্ড সময়সীমা শিটেই আছে
+                            // এক্সট্র্যাকশন শেষ + অন্তত ৪ সেকেন্ড (পেজের নিজের
+                            // নেটওয়ার্ক দেখার সময়) হলে তবেই "শেষ" ধরি
+                            return extractDone.get()
+                                    && (System.currentTimeMillis() - startedAt) > 4000L;
                         }
                     },
                     new MediaOptionsSheet.OnPick() {
@@ -3096,7 +3107,8 @@ public class MainActivity extends Activity {
                                         .putExtra(DownloadService.EXTRA_TITLE,
                                                 titleOr(m, u))
                                         .putExtra(DownloadService.EXTRA_DIRECT, m.url)
-                                        .putExtra(DownloadService.EXTRA_DEXT, m.ext));
+                                        .putExtra(DownloadService.EXTRA_DEXT, m.ext)
+                                        .putExtra(DownloadService.EXTRA_REF, u));
                                 DownloadsSheet.show(MainActivity.this);
                             } catch (Throwable t) {
                             }
