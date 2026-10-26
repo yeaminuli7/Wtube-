@@ -39,15 +39,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node (toolchain comes from npm)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -133,7 +133,7 @@ jobs:
           done
 
       - name: Upload APK as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Wtube_v${{ steps.v.outputs.name }}
           path: mytube-web/apk/Wtube_v${{ steps.v.outputs.name }}.apk
