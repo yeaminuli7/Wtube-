@@ -88,6 +88,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.v.outputs.tag }}
+          # CRITICAL: without this, the GitHub API creates the tag on the
+          # repository's DEFAULT branch, not on the commit that was built.
+          # The default branch here is `main`, which sits at the initial commit,
+          # so every release's "Source code (zip)" contained only README.md —
+          # zero .java files. Pinning to github.sha fixes that.
+          target_commitish: ${{ github.sha }}
           name: Wtube v${{ steps.v.outputs.name }}
           body: |
             ## Download
